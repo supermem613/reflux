@@ -1,0 +1,45 @@
+{
+  "name": "reflux",
+  "version": "0.1.0",
+  "description": "Per-identity GitHub credential router for Windows. Routes git auth requests to the right `gh` account so a single sign-in covers all your repos.",
+  "type": "module",
+  "bin": {
+    "reflux": "./dist/cli.js",
+    "git-credential-reflux": "./dist/helper.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node test/run.mjs test/**/*.test.ts",
+    "test:unit": "node test/run.mjs test/unit/**/*.test.ts",
+    "test:integration": "node test/run.mjs test/integration/**/*.test.ts",
+    "lint": "tsc --noEmit && tsc --noEmit -p test/tsconfig.json",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "git",
+    "credential-helper",
+    "github",
+    "gh",
+    "windows",
+    "emu"
+  ],
+  "license": "MIT",
+  "os": [
+    "win32"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "minimatch": "^10.0.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  }
+}
