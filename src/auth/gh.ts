@@ -124,20 +124,39 @@ export function isAuthenticated(ghUser: string, hostname = "github.com"): boolea
  * github.com. So we pre-write "n\n" to gh's stdin and let gh handle the
  * rest (device code display, browser open, polling).
  *
- * stdout/stderr are inherited so the user sees the device code and the
- * "Authentication complete" confirmation. Resolves with the child exit code.
+ * stdout normally inherits so the user sees the device code. When called
+ * from the credential-helper subprocess, the parent's stdout is git's
+ * protocol pipe — emitting a device code there would corrupt the
+ * response. Pass `quietStdout: true` to redirect gh's stdout to stderr so
+ * the user still sees it but git's pipe stays clean.
  */
-export function loginInteractive(extraArgs: string[] = []): Promise<number> {
+export interface LoginInteractiveOptions {
+  /** Redirect gh's stdout to stderr. Required when invoking from the helper. */
+  quietStdout?: boolean;
+}
+
+export function loginInteractive(
+  extraArgs: string[] = [],
+  opts: LoginInteractiveOptions = {},
+): Promise<number> {
   return new Promise<number>((resolve) => {
+    const stdout = opts.quietStdout ? "pipe" : "inherit";
     const child = spawn(
       GH_BIN(),
       ["auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web", ...extraArgs],
-      { stdio: ["pipe", "inherit", "inherit"], windowsHide: false },
+      { stdio: ["pipe", stdout, "inherit"], windowsHide: false, shell: needsShell(GH_BIN()) },
     );
+    if (opts.quietStdout && child.stdout) {
+      // Mirror gh's stdout into our stderr so the user sees the device code
+      // and any progress lines without polluting git's protocol pipe.
+      child.stdout.on("data", (chunk: Buffer) => process.stderr.write(chunk));
+    }
     // Decline the "Authenticate Git with your GitHub credentials?" prompt.
     // Writing more than one line is harmless if gh asks fewer questions.
-    child.stdin.write("n\n");
-    child.stdin.end();
+    if (child.stdin) {
+      child.stdin.write("n\n");
+      child.stdin.end();
+    }
     child.on("exit", (code) => resolve(code ?? 1));
     child.on("error", () => resolve(1));
   });

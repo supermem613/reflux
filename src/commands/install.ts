@@ -128,10 +128,12 @@ export async function installCommand(): Promise<void> {
   await ensureUseHttpPath();
   console.log(chalk.green("✓") + ` Registered git-credential-reflux for ${chalk.cyan("https://github.com")}`);
   console.log(chalk.green("✓") + ` Enabled ${chalk.cyan("useHttpPath")} so per-org mappings can resolve`);
-  console.log(chalk.dim("\nNext steps:"));
-  console.log(chalk.dim("  reflux profile add <name> --gh-user <login>"));
-  console.log(chalk.dim("  reflux login <name>"));
-  console.log(chalk.dim("  reflux map add <url-prefix> <name>"));
+
+  // Surface any missing gh sessions or other config issues now, so the user
+  // sees them here instead of in the middle of the next `git pull`.
+  console.log("");
+  const { doctorCommand } = await import("./doctor.js");
+  await doctorCommand();
 }
 
 async function tryUnsetValue(valuePattern: string): Promise<boolean> {

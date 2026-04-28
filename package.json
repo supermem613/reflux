@@ -1,6 +1,6 @@
 {
   "name": "reflux",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "Per-identity GitHub credential router for Windows. Routes git auth requests to the right `gh` account so a single sign-in covers all your repos.",
   "type": "module",
   "bin": {

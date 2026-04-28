@@ -10,35 +10,35 @@ import { git, isGitRepo } from "../utils/git.js";
 const execAsync = promisify(exec);
 
 /**
- * `reflux update` — refresh the installed binary from the development clone.
+ * `reflux update` — refresh reflux from its development clone.
  *
- * Two install topologies must work:
+ * Reflux is always installed via `npm link` from a local clone — never
+ * `npm install -g`. The link makes `<npm-prefix>/node_modules/reflux` a
+ * junction pointing at the clone, and the bin shim points into the same
+ * clone's `dist/`. That means a successful rebuild updates the live
+ * binary atomically, with no global install step.
  *
- *   1. Dev-style (`npm link` from a clone): `import.meta.url` resolves to
- *      the clone itself. Pull / install / build in place — no global
- *      reinstall needed because the link points at this directory.
+ * Topologies this command handles:
  *
- *   2. Production-style (`npm install -g <pkg>`): `import.meta.url`
- *      resolves to `<prefix>/node_modules/reflux/`, which is not a git
- *      repo. We need to find the dev clone elsewhere, refresh it, then
- *      `npm install -g` from it so the global bin shadow updates.
+ *   1. Linked install: `import.meta.url` resolves into the clone itself
+ *      (because the junction is transparent to fileURLToPath). isGitRepo
+ *      returns true, we update in place, done.
  *
- * Dev-clone discovery order:
- *   - $REFLUX_DEV_DIR (explicit override)
- *   - ~/repos/reflux  (the convention this project ships with)
- *
- * If neither is a git repo, we fail with instructions instead of guessing.
+ *   2. Stale or missing link: `import.meta.url` resolves into a copied
+ *      `node_modules/reflux/` directory left over from an old global
+ *      install. We locate the dev clone via $REFLUX_DEV_DIR or
+ *      ~/repos/reflux, refresh it, then ask the user to re-run
+ *      `npm link` from there. We do not silently `npm install -g` because
+ *      that recreates the same brittle global-prefix mess we are trying
+ *      to leave behind.
  */
 
 interface UpdateTarget {
   dir: string;
-  needsGlobalInstall: boolean;
+  isLinked: boolean;
 }
 
 function resolveModuleRoot(): string {
-  // dist/commands/update.js → repo root is two `dirname`s up from the file
-  // when running from a clone, or two up from inside node_modules/reflux/
-  // when installed.
   const thisFile = fileURLToPath(import.meta.url);
   return dirname(dirname(dirname(thisFile)));
 }
@@ -46,7 +46,7 @@ function resolveModuleRoot(): string {
 async function locateUpdateTarget(): Promise<UpdateTarget | null> {
   const moduleRoot = resolveModuleRoot();
   if (await isGitRepo(moduleRoot)) {
-    return { dir: moduleRoot, needsGlobalInstall: false };
+    return { dir: moduleRoot, isLinked: true };
   }
 
   const candidates = [
@@ -57,7 +57,7 @@ async function locateUpdateTarget(): Promise<UpdateTarget | null> {
   for (const candidate of candidates) {
     if (!existsSync(candidate)) continue;
     if (await isGitRepo(candidate)) {
-      return { dir: candidate, needsGlobalInstall: true };
+      return { dir: candidate, isLinked: false };
     }
   }
   return null;
@@ -81,22 +81,17 @@ export async function updateCommand(): Promise<void> {
   if (!target) {
     const moduleRoot = resolveModuleRoot();
     console.log(chalk.dim(`  Reflux module: ${moduleRoot}\n`));
-    console.error(chalk.red("Error:") + " Reflux is installed from npm but no development clone was found.");
+    console.error(chalk.red("Error:") + " Reflux is not linked and no development clone was found.");
     console.error(chalk.dim("  Looked in:"));
     if (process.env.REFLUX_DEV_DIR) {
       console.error(chalk.dim(`    $REFLUX_DEV_DIR = ${process.env.REFLUX_DEV_DIR}`));
     }
     console.error(chalk.dim(`    ${join(homedir(), "repos", "reflux")}`));
-    console.error(chalk.dim("\n  Either clone reflux to ~/repos/reflux or set REFLUX_DEV_DIR to your clone path."));
+    console.error(chalk.dim("\n  Clone reflux to ~/repos/reflux (or set REFLUX_DEV_DIR), then run `npm link` from there."));
     process.exit(1);
   }
 
-  console.log(chalk.dim(`  Reflux repo: ${target.dir}`));
-  if (target.needsGlobalInstall) {
-    console.log(chalk.dim(`  (running from npm install; will reinstall globally after build)\n`));
-  } else {
-    console.log("");
-  }
+  console.log(chalk.dim(`  Reflux repo: ${target.dir}\n`));
 
   console.log(chalk.bold("  ↓ Pulling latest..."));
   try {
@@ -116,12 +111,22 @@ export async function updateCommand(): Promise<void> {
   await runStep("⬡ Installing dependencies...", "npm install --no-audit --no-fund", target.dir);
   await runStep("🔨 Building...", "npm run build", target.dir);
 
-  if (target.needsGlobalInstall) {
-    // Reinstall the global bin from the freshly-built dev clone. Passing
-    // the directory (not a tarball) lets npm wire up the bin shims to the
-    // updated dist/ on every invocation, no repack step needed.
-    await runStep("📦 Reinstalling global bin...", `npm install -g "${target.dir}"`, target.dir);
+  if (!target.isLinked) {
+    // The dev clone was found via the fallback, but the running reflux is
+    // not the linked clone — most likely a leftover global install. Ask
+    // the user to run `npm link` from the clone so future invocations pick
+    // up the rebuilt dist/ automatically.
+    console.log(chalk.yellow("\n  ⚠  Reflux is not linked to this clone."));
+    console.log(chalk.dim(`     Run:  cd ${target.dir} && npm link`));
+    console.log(chalk.dim("     After that, `reflux update` will refresh in place with no global install."));
+    return;
   }
 
   console.log(chalk.green("\n  ✓ Reflux updated successfully."));
+
+  // Run doctor so missing gh sessions or git config drift are surfaced now,
+  // not at the next `git pull` against an unsigned-in profile.
+  console.log("");
+  const { doctorCommand } = await import("./doctor.js");
+  await doctorCommand();
 }

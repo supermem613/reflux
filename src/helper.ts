@@ -19,9 +19,10 @@
  * (and to stderr only when REFLUX_DEBUG=1).
  */
 
+import chalk from "chalk";
 import { loadConfig } from "./core/config.js";
 import { getProfile } from "./core/profiles.js";
-import { getToken } from "./auth/gh.js";
+import { getToken, isAuthenticated, isInstalled as isGhInstalled, loginInteractive } from "./auth/gh.js";
 import {
   CredentialAction,
   CredentialRequest,
@@ -61,19 +62,86 @@ async function handleGet(request: CredentialRequest, stdinBuffer: string): Promi
 
   log.debug("reflux-owned", { url: requestUrl(request), profile: profileName, ghUser: profile.ghUser });
 
-  const result = getToken(profile.ghUser, request.host ?? "github.com");
+  let result = getToken(profile.ghUser, request.host ?? "github.com");
   if (!result.ok) {
-    // gh has no live token for this user. We cannot fall through via the
-    // helper chain — `reflux install` resets the chain so reflux is the
-    // only registered helper for github.com. Spawn GCM directly so the
-    // user gets the prompt they would have gotten without reflux.
-    log.warn("gh auth token failed; passing through to GCM", {
+    // gh has no live token for this user. We KNOW which profile and which
+    // gh user are required (the mapping resolved cleanly), so the right
+    // recovery is to drive `gh auth login` ourselves — silently falling
+    // through to GCM would prompt for username/password and leave the
+    // user without a working token even on success.
+    //
+    // This is an *expected* recovery path, not a fault: log at info so the
+    // file record exists but the user does not see a noisy WARN line above
+    // the formatted banner.
+    log.info("driving gh auth login for missing token", {
       profile: profileName,
       ghUser: profile.ghUser,
       reason: result.reason,
     });
-    const { exitCode } = await passthroughToGcm("get", { stdinBuffer });
-    return exitCode;
+    if (!isGhInstalled()) {
+      writeStatus("error", `gh CLI is not installed.`, [
+        `Profile ${chalk.cyan(profileName)} requires gh user ${chalk.cyan(profile.ghUser)}.`,
+        `Install gh from https://cli.github.com and retry.`,
+      ]);
+      // Tell git to stop the helper chain instead of falling through to a
+      // built-in prompt that cannot produce a usable token here.
+      process.stdout.write("quit=1\n\n");
+      return 0;
+    }
+
+    if (process.env.REFLUX_NO_AUTO_LOGIN === "1") {
+      writeStatus("warn", `Auto-login disabled by REFLUX_NO_AUTO_LOGIN=1.`, [
+        `Run \`reflux login ${profileName}\` and retry.`,
+      ]);
+      process.stdout.write("quit=1\n\n");
+      return 0;
+    }
+
+    writeStatus(
+      "warn",
+      `Profile ${chalk.cyan(profileName)} (gh user ${chalk.cyan(profile.ghUser)}) is not signed in.`,
+      [
+        `Launching \`gh auth login\` — sign in as ${chalk.cyan(profile.ghUser)} when the browser opens.`,
+        `(set REFLUX_NO_AUTO_LOGIN=1 to disable this and fall back to a hard error.)`,
+      ],
+    );
+
+    const loginExit = await loginInteractive([], { quietStdout: true });
+    if (loginExit !== 0) {
+      writeStatus("error", `gh auth login exited ${loginExit}.`, [
+        `Run \`reflux login ${profileName}\` manually and retry.`,
+      ]);
+      process.stdout.write("quit=1\n\n");
+      return 0;
+    }
+
+    // Verify the user signed in as the expected account, not some other
+    // GitHub identity that happened to be in their browser.
+    if (!isAuthenticated(profile.ghUser)) {
+      writeStatus(
+        "error",
+        `gh login completed, but no account named ${chalk.cyan(profile.ghUser)} is reported by \`gh auth status\`.`,
+        [
+          `Did you sign in as a different account?`,
+          `Update the profile: \`reflux profile add ${profileName} --gh-user <correct-user>\``,
+          `Or re-run \`gh auth login\` and pick the right account.`,
+        ],
+      );
+      process.stdout.write("quit=1\n\n");
+      return 0;
+    }
+
+    result = getToken(profile.ghUser, request.host ?? "github.com");
+    if (!result.ok) {
+      writeStatus("error", `Still no token for ${chalk.cyan(profile.ghUser)} after login.`, [
+        `Reason: ${result.reason}`,
+        `Run \`reflux doctor\` to inspect gh + reflux state.`,
+      ]);
+      process.stdout.write("quit=1\n\n");
+      return 0;
+    }
+
+    writeStatus("ok", `Signed in as ${chalk.cyan(profile.ghUser)}.`, [`Serving credential to git.`]);
   }
 
   const response = formatCredentialStream({
@@ -82,6 +150,34 @@ async function handleGet(request: CredentialRequest, stdinBuffer: string): Promi
   });
   process.stdout.write(response);
   return 0;
+}
+
+/**
+ * Write a CLI-styled status block to stderr.
+ *
+ * Stdout is reserved for git's credential protocol, so all user-visible
+ * output goes to stderr. The format mirrors the rest of the reflux CLI
+ * (`install`, `update`, `profile`, etc.):
+ *
+ *   <blank>
+ *     <icon> <headline>
+ *           <hint line 1>
+ *           <hint line 2>
+ *   <blank>
+ *
+ * Icons match doctor/install: green ✓, yellow ⚠, red ✗.
+ */
+function writeStatus(kind: "ok" | "warn" | "error", headline: string, hints: string[] = []): void {
+  const icon =
+    kind === "ok" ? chalk.green("✓") :
+    kind === "error" ? chalk.red("✗") :
+    chalk.yellow("⚠");
+  const lines: string[] = ["", `  ${icon} ${headline}`];
+  for (const h of hints) {
+    lines.push(`    ${chalk.dim(h)}`);
+  }
+  lines.push("");
+  process.stderr.write(lines.join("\n"));
 }
 
 async function handleStore(request: CredentialRequest, stdinBuffer: string): Promise<number> {
