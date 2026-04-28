@@ -123,10 +123,4 @@ export async function updateCommand(): Promise<void> {
   }
 
   console.log(chalk.green("\n  ✓ Reflux updated successfully."));
-
-  // Run doctor so missing gh sessions or git config drift are surfaced now,
-  // not at the next `git pull` against an unsigned-in profile.
-  console.log("");
-  const { doctorCommand } = await import("./doctor.js");
-  await doctorCommand();
 }
