@@ -85,9 +85,9 @@ What changes with reflux:
   you happen to push. When `gh`'s token expires, you can run
   `gh auth login --hostname github.com` ahead of time and the next push
   works silently.
-- **Reflux fails open** when `gh`'s token is gone. Git falls through to
-  GCM, which will prompt as it always did. So the worst case is "same as
-  before reflux" — never worse.
+- **Reflux recovers when `gh`'s token is gone.** For mapped GitHub URLs,
+  the helper warns and drives `gh auth login` for the mapped profile instead
+  of falling through to a generic username/password prompt.
 
 ## What reflux does NOT do
 
@@ -107,11 +107,11 @@ What changes with reflux:
 If `git push` ever does fail with a credential rejection while reflux is
 installed:
 
-1. Check `gh auth status` — is the matching account still listed?
-2. If yes, the token may still be valid; the failure was probably transient
-   (rare GitHub 5xx). Retry.
-3. If no, run `reflux login <profile>` (which delegates to `gh auth login`)
-   and pick the matching account when prompted.
+1. Reflux should print a warning and launch `gh auth login` for the mapped
+   profile. Pick the matching account when prompted.
+2. Retry the Git operation after the login completes.
+3. If auto-login is disabled with `REFLUX_NO_AUTO_LOGIN=1`, run
+   `reflux login <profile>` manually and retry.
 
 `reflux logout <profile>` runs `gh auth logout --user <ghUser>` if you want
 to force a clean re-auth.

@@ -100,6 +100,13 @@ if (args[0] === "auth" && args[1] === "login") {
   });
   return;
 }
+if (args[0] === "auth" && args[1] === "logout") {
+  const user = findArg("--user");
+  const state = readState();
+  state.signedIn = state.signedIn.filter((u) => u !== user);
+  writeState(state);
+  process.exit(0);
+}
 process.stderr.write("stub gh: unhandled args " + JSON.stringify(args) + "\\n");
 process.exit(2);
 `,
@@ -174,8 +181,12 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
 });
 
-function runHelper(stdin: string, extraEnv: NodeJS.ProcessEnv = {}): { stdout: string; stderr: string; status: number | null } {
-  const r = spawnSync("node", [HELPER_BIN, "get"], {
+function runHelper(
+  stdin: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+  action = "get",
+): { stdout: string; stderr: string; status: number | null } {
+  const r = spawnSync("node", [HELPER_BIN, action], {
     input: stdin,
     env: { ...env, ...extraEnv },
     encoding: "utf-8",
@@ -318,5 +329,42 @@ describe("helper — auto-login recovery for missing token", () => {
     assert.match(r.stdout, /username=stub-passthrough-user/);
     assert.equal(ghCalls().length, 0, "gh must not be invoked for passthrough requests");
     assert.deepEqual(gitStubCalls(), [["credential-manager", "get"]]);
+  });
+
+  it("drives forced re-auth when git rejects a reflux-owned credential", () => {
+    if (!existsSync(HELPER_BIN)) return;
+
+    writeFileSync(ghStateFile, JSON.stringify({ signedIn: ["supermem613"] }) + "\n");
+
+    const r = runHelper(REQUEST, { STUB_GH_LOGIN_AS: "supermem613" }, "erase");
+
+    assert.equal(r.status, 0, `expected exit 0, got ${r.status}: ${r.stderr}`);
+    assert.equal(r.stdout, "", "erase must not write to git's credential protocol stdout");
+    assert.match(r.stderr, /GitHub rejected the token for profile personal/);
+    assert.match(r.stderr, /gh auth login/);
+    assert.match(r.stderr, /✓ Signed in as supermem613/);
+    assert.deepEqual(gitStubCalls(), [], "reflux-owned erase must not invoke GCM");
+
+    const calls = ghCalls();
+    assert.deepEqual(calls[0], ["--version"]);
+    assert.deepEqual(calls[1], ["auth", "logout", "--hostname", "github.com", "--user", "supermem613"]);
+    assert.equal(calls[2][0], "auth");
+    assert.equal(calls[2][1], "login");
+    assert.deepEqual(calls[3].slice(0, 2), ["auth", "status"]);
+  });
+
+  it("respects REFLUX_NO_AUTO_LOGIN=1 when git rejects a reflux-owned credential", () => {
+    if (!existsSync(HELPER_BIN)) return;
+
+    writeFileSync(ghStateFile, JSON.stringify({ signedIn: ["supermem613"] }) + "\n");
+
+    const r = runHelper(REQUEST, { REFLUX_NO_AUTO_LOGIN: "1", STUB_GH_LOGIN_AS: "supermem613" }, "erase");
+
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, "");
+    assert.match(r.stderr, /Auto-login disabled by REFLUX_NO_AUTO_LOGIN=1/);
+    assert.match(r.stderr, /reflux login personal/);
+    assert.deepEqual(ghCalls(), [["--version"]]);
+    assert.deepEqual(gitStubCalls(), []);
   });
 });

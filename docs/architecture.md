@@ -131,23 +131,24 @@ Three reasons:
 ## Failure mode: gh has no token for the routed user
 
 When `gh auth token --user X` fails (user isn't signed in, gh isn't
-installed, gh's keyring is locked), reflux exits 0 with no output. Git
-interprets this as "this helper had nothing to say" and moves to the next
-configured helper — typically GCM, which will then prompt the user
-interactively. The user sees one re-auth prompt, not a stack trace.
+installed, gh's keyring is locked), reflux prints a warning to stderr and
+drives `gh auth login` for the mapped profile. Helper stdout remains reserved
+for Git's credential protocol; if recovery fails, reflux emits `quit=1` so Git
+does not fall through to a username/password prompt that cannot fix the mapped
+profile.
 
-This is deliberate: reflux is in the hot path, git is blocked on it, and an
-unrecoverable-from-the-helper failure should fail open to whatever git was
-going to do without us.
+This is deliberate: by the time a mapping resolved, reflux knows exactly which
+GitHub account is required, so the most useful recovery is the same login flow
+the user would have run manually.
 
 ## Failure mode: git rejects our token (`erase` action)
 
-When git tells us `erase` (the credential we served was rejected), we log a
-warning and exit 0 *without* calling `gh auth logout`. Logging the user out
-of `gh` would also log out other tools (`gh repo clone`, gh's own credential
-helper, anything else binding to that account) — far beyond what git is asking
-us to do. The right recovery is `reflux login <profile>`, which the user runs
-when they notice.
+When git tells us `erase` (the credential we served was rejected), reflux
+prints a warning, logs out only the mapped `gh` user, and drives `gh auth
+login` for that profile. The current Git operation may already have failed,
+but the user gets a targeted re-auth prompt instead of only a raw GitHub
+`Invalid username or token` error, and the next Git operation receives a fresh
+token.
 
 ## Why pass through unmapped hosts to GCM?
 

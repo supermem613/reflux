@@ -73,9 +73,8 @@ same identity, that's a bug — file an issue with `reflux doctor` output.
 That's intentional. Reflux exits 0 with no output when:
 - The host is not github.com (passthrough; the next helper handles it).
 - No mapping matches the URL (passthrough).
-- The mapping resolves but `gh` has no token for that user.
 
-In all three cases, git falls through to whichever helper comes next in
+In both cases, git falls through to whichever helper comes next in
 your config (typically GCM). To force reflux to log what it decided:
 
 ```powershell
