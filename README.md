@@ -49,6 +49,9 @@ unchanged.
 ## Quick start
 
 ```powershell
+# Install prerequisites (one-time).
+winget install --id GitHub.cli -e   # gh ≥ 2.40, required for multi-account auth
+
 git clone https://github.com/marcusm/reflux ~/repos/reflux
 cd ~/repos/reflux
 npm install
@@ -135,7 +138,7 @@ See [docs/commands.md](docs/commands.md) for full details.
 
 - Windows 10 or 11
 - Node.js ≥ 20
-- [`gh`](https://cli.github.com) ≥ 2.40 (multi-account `--user` support)
+- [`gh`](https://cli.github.com) ≥ 2.40 (multi-account `--user` support) — install with `winget install --id GitHub.cli -e`
 - `git-credential-manager` installed (used for passthrough on non-GitHub hosts)
 
 ## License

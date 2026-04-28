@@ -15,6 +15,15 @@ Throughout this doc:
 
 ## 1. Build & link
 
+Install the GitHub CLI first (one-time):
+
+```powershell
+winget install --id GitHub.cli -e
+gh --version   # confirm gh ≥ 2.40 is on PATH (open a new shell if not)
+```
+
+Then build and link reflux:
+
 ```powershell
 cd C:\path\to\reflux
 npm install

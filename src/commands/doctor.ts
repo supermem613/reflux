@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import chalk from "chalk";
 import { authStatus, isInstalled, version as ghVersion } from "../auth/gh.js";
 import { loadConfig } from "../core/config.js";
+import { inspectHelperList, readHelperValues, readUseHttpPath } from "./install.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -60,6 +61,40 @@ function checkConfig(): CheckResult {
   }
 }
 
+async function checkHelperRegistered(): Promise<CheckResult> {
+  const values = await readHelperValues();
+  const state = inspectHelperList(values);
+  if (!state.hasReflux) {
+    return {
+      name: "git helper registration",
+      ok: false,
+      detail: "reflux is not in credential.https://github.com.helper",
+      hint: "Run `reflux install`.",
+    };
+  }
+  if (!state.hasResetBeforeReflux) {
+    return {
+      name: "git helper registration",
+      ok: false,
+      detail: "reflux is registered but no empty-string reset precedes it; an inherited helper (e.g. GCM via `credential.helper=manager`) will run first and prompt before reflux is consulted",
+      hint: "Run `reflux install` to repair.",
+    };
+  }
+  return { name: "git helper registration", ok: true, detail: `helper list = [${values.map((v) => JSON.stringify(v)).join(", ")}]` };
+}
+
+async function checkUseHttpPath(): Promise<CheckResult> {
+  const ok = await readUseHttpPath();
+  return ok
+    ? { name: "git useHttpPath", ok: true, detail: "credential.https://github.com.useHttpPath = true" }
+    : {
+        name: "git useHttpPath",
+        ok: false,
+        detail: "credential.https://github.com.useHttpPath is not true; reflux will see no path on credential requests and per-org mappings cannot resolve (everything falls to the catch-all profile)",
+        hint: "Run `reflux install` to repair.",
+      };
+}
+
 function checkProfile(name: string, ghUser: string, accounts: { user: string }[]): CheckResult {
   const found = accounts.some((a) => a.user === ghUser);
   return {
@@ -74,6 +109,8 @@ export async function doctorCommand(): Promise<void> {
   const results: CheckResult[] = [
     checkGh(),
     await checkGcm(),
+    await checkHelperRegistered(),
+    await checkUseHttpPath(),
     checkConfig(),
   ];
 
