@@ -47,9 +47,13 @@ const KNOWN_KEYS = new Set([
 export function parseCredentialStream(input: string): CredentialRequest {
   const req: CredentialRequest = { capabilities: [], extras: {} };
   for (const rawLine of input.split(/\r?\n/)) {
-    if (rawLine === "") break; // blank line terminates the request
+    if (rawLine === "") {
+      break;
+    } // blank line terminates the request
     const eq = rawLine.indexOf("=");
-    if (eq < 0) continue;
+    if (eq < 0) {
+      continue;
+    }
     const key = rawLine.slice(0, eq);
     const value = rawLine.slice(eq + 1);
     if (key === "capability[]") {
@@ -60,15 +64,23 @@ export function parseCredentialStream(input: string): CredentialRequest {
       req.extras![key] = value;
     }
   }
-  if (req.capabilities!.length === 0) delete req.capabilities;
-  if (Object.keys(req.extras!).length === 0) delete req.extras;
+  if (req.capabilities!.length === 0) {
+    delete req.capabilities;
+  }
+  if (Object.keys(req.extras!).length === 0) {
+    delete req.extras;
+  }
   return req;
 }
 
 export function formatCredentialStream(response: CredentialResponse): string {
   const lines: string[] = [];
-  if (response.username !== undefined) lines.push(`username=${response.username}`);
-  if (response.password !== undefined) lines.push(`password=${response.password}`);
+  if (response.username !== undefined) {
+    lines.push(`username=${response.username}`);
+  }
+  if (response.password !== undefined) {
+    lines.push(`password=${response.password}`);
+  }
   if (response.password_expiry_utc !== undefined) {
     lines.push(`password_expiry_utc=${response.password_expiry_utc}`);
   }
@@ -88,7 +100,9 @@ export function formatCredentialStream(response: CredentialResponse): string {
 export async function readStdin(stream: Readable = process.stdin): Promise<string> {
   // process.stdin has isTTY; arbitrary Readable streams don't. If we're
   // attached to a TTY (no input piped) there's nothing to read.
-  if ((stream as Readable & { isTTY?: boolean }).isTTY) return "";
+  if ((stream as Readable & { isTTY?: boolean }).isTTY) {
+    return "";
+  }
   const chunks: Buffer[] = [];
   for await (const chunk of stream) {
     chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
@@ -102,7 +116,9 @@ export async function readStdin(stream: Readable = process.stdin): Promise<strin
  * git supplies one, otherwise reconstructs from protocol+host+path.
  */
 export function requestUrl(req: CredentialRequest): string {
-  if (req.url) return req.url;
+  if (req.url) {
+    return req.url;
+  }
   const proto = req.protocol ?? "https";
   const host = req.host ?? "";
   const path = req.path ?? "";

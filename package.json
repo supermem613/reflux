@@ -1,6 +1,6 @@
 {
   "name": "reflux",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Per-identity GitHub credential router for Windows. Routes git auth requests to the right `gh` account so a single sign-in covers all your repos.",
   "type": "module",
   "bin": {
@@ -12,9 +12,9 @@
     "test": "node test/run.mjs test/**/*.test.ts",
     "test:unit": "node test/run.mjs test/unit/**/*.test.ts",
     "test:integration": "node test/run.mjs test/integration/**/*.test.ts",
-    "lint": "tsc --noEmit && tsc --noEmit -p test/tsconfig.json",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "lint": "eslint src/ test/ && tsc --noEmit && tsc --noEmit -p test/tsconfig.json"
   },
   "keywords": [
     "git",
@@ -37,9 +37,13 @@
     "zod": "^3.24.4"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.17.0",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
     "minimatch": "^10.0.1",
     "tsx": "^4.21.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.59.2"
   }
 }

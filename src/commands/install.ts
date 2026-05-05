@@ -68,7 +68,9 @@ async function gitConfig(args: string[]): Promise<GitConfigResult> {
  */
 export async function readHelperValues(): Promise<string[]> {
   const { stdout, exitCode } = await gitConfig(["--get-all", HELPER_KEY]);
-  if (exitCode !== 0 && stdout === "") return [];
+  if (exitCode !== 0 && stdout === "") {
+    return [];
+  }
   return stdout.replace(/\r?\n$/, "").split(/\r?\n/);
 }
 
@@ -91,7 +93,9 @@ export interface HelperState {
  */
 export function inspectHelperList(values: readonly string[]): HelperState {
   const refluxIndex = values.indexOf("reflux");
-  if (refluxIndex < 0) return { hasReflux: false, hasResetBeforeReflux: false };
+  if (refluxIndex < 0) {
+    return { hasReflux: false, hasResetBeforeReflux: false };
+  }
   const resetIndex = values.indexOf("");
   return {
     hasReflux: true,
@@ -114,12 +118,16 @@ async function ensureHelperRegistered(): Promise<void> {
 
 export async function readUseHttpPath(): Promise<boolean> {
   const { stdout, exitCode } = await gitConfig(["--get", USE_HTTP_PATH_KEY]);
-  if (exitCode !== 0) return false;
+  if (exitCode !== 0) {
+    return false;
+  }
   return stdout.trim().toLowerCase() === "true";
 }
 
 async function ensureUseHttpPath(): Promise<void> {
-  if (await readUseHttpPath()) return;
+  if (await readUseHttpPath()) {
+    return;
+  }
   await gitConfig([USE_HTTP_PATH_KEY, "true"]);
 }
 

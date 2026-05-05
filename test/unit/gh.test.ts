@@ -40,8 +40,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (originalGhBin === undefined) delete process.env.REFLUX_GH_BIN;
-  else process.env.REFLUX_GH_BIN = originalGhBin;
+  if (originalGhBin === undefined) {
+    delete process.env.REFLUX_GH_BIN;
+  } else {
+    process.env.REFLUX_GH_BIN = originalGhBin;
+  }
   rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -74,7 +77,9 @@ describe("gh wrapper — getToken", () => {
     `);
     const r = getToken("personal-login");
     assert.equal(r.ok, true);
-    if (r.ok) assert.equal(r.token, "gho_FAKE_TOKEN_VALUE");
+    if (r.ok) {
+      assert.equal(r.token, "gho_FAKE_TOKEN_VALUE");
+    }
   });
 
   it("reports the stderr reason when gh exits non-zero", () => {
@@ -84,14 +89,18 @@ describe("gh wrapper — getToken", () => {
     `);
     const r = getToken("work-login");
     assert.equal(r.ok, false);
-    if (!r.ok) assert.match(r.reason, /no oauth token/);
+    if (!r.ok) {
+      assert.match(r.reason, /no oauth token/);
+    }
   });
 
   it("reports a reason when stdout is empty even with exit 0", () => {
     process.env.REFLUX_GH_BIN = installStub(`process.exit(0);`);
     const r = getToken("anybody");
     assert.equal(r.ok, false);
-    if (!r.ok) assert.match(r.reason, /empty/);
+    if (!r.ok) {
+      assert.match(r.reason, /empty/);
+    }
   });
 });
 
@@ -146,6 +155,8 @@ describe("gh wrapper — logout", () => {
     `);
     const r = logout("nobody");
     assert.equal(r.ok, false);
-    if (!r.ok) assert.match(r.reason ?? "", /not logged in/);
+    if (!r.ok) {
+      assert.match(r.reason ?? "", /not logged in/);
+    }
   });
 });

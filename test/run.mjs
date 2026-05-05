@@ -62,7 +62,9 @@ try {
     totalTests += tests;
     totalPass += pass;
     totalFail += fail;
-    if (fileFailed && fail === 0) totalFail += 1;
+    if (fileFailed && fail === 0) {
+      totalFail += 1;
+    }
   }
   console.log(`\n# AGGREGATE: tests ${totalTests} | pass ${totalPass} | fail ${totalFail}`);
   if (failedFiles.length) {

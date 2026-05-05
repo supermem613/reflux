@@ -55,7 +55,9 @@ async function locateUpdateTarget(): Promise<UpdateTarget | null> {
   ].filter((p): p is string => Boolean(p));
 
   for (const candidate of candidates) {
-    if (!existsSync(candidate)) continue;
+    if (!existsSync(candidate)) {
+      continue;
+    }
     if (await isGitRepo(candidate)) {
       return { dir: candidate, isLinked: false };
     }

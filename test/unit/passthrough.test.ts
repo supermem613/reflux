@@ -39,7 +39,9 @@ class CollectingStream extends Writable {
     this.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     cb();
   }
-  text(): string { return Buffer.concat(this.chunks).toString("utf-8"); }
+  text(): string {
+    return Buffer.concat(this.chunks).toString("utf-8"); 
+  }
 }
 
 describe("passthroughToGcm", () => {

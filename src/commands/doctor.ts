@@ -88,11 +88,11 @@ async function checkUseHttpPath(): Promise<CheckResult> {
   return ok
     ? { name: "git useHttpPath", ok: true, detail: "credential.https://github.com.useHttpPath = true" }
     : {
-        name: "git useHttpPath",
-        ok: false,
-        detail: "credential.https://github.com.useHttpPath is not true; reflux will see no path on credential requests and per-org mappings cannot resolve (everything falls to the catch-all profile)",
-        hint: "Run `reflux install` to repair.",
-      };
+      name: "git useHttpPath",
+      ok: false,
+      detail: "credential.https://github.com.useHttpPath is not true; reflux will see no path on credential requests and per-org mappings cannot resolve (everything falls to the catch-all profile)",
+      hint: "Run `reflux install` to repair.",
+    };
 }
 
 function checkProfile(name: string, ghUser: string, accounts: { user: string }[]): CheckResult {
@@ -133,8 +133,12 @@ export async function doctorCommand(): Promise<void> {
   for (const r of results) {
     const icon = r.ok ? chalk.green("✓") : chalk.red("✗");
     console.log(`${icon} ${chalk.bold(r.name)} — ${r.detail}`);
-    if (!r.ok && r.hint) console.log(chalk.dim(`    ${r.hint}`));
-    if (!r.ok) bad += 1;
+    if (!r.ok && r.hint) {
+      console.log(chalk.dim(`    ${r.hint}`));
+    }
+    if (!r.ok) {
+      bad += 1;
+    }
   }
 
   if (bad === 0) {

@@ -22,10 +22,15 @@ export function statusCommand(): void {
     for (const p of config.profiles) {
       const acct = accountByUser.get(p.ghUser);
       let state: string;
-      if (!isInstalled()) state = chalk.dim("gh missing");
-      else if (!acct) state = chalk.yellow("not signed in");
-      else if (acct.active) state = chalk.green("signed in (active)");
-      else state = chalk.green("signed in");
+      if (!isInstalled()) {
+        state = chalk.dim("gh missing");
+      } else if (!acct) {
+        state = chalk.yellow("not signed in");
+      } else if (acct.active) {
+        state = chalk.green("signed in (active)");
+      } else {
+        state = chalk.green("signed in");
+      }
       console.log(`  ${chalk.cyan(p.name.padEnd(16))} → ${chalk.cyan(p.ghUser.padEnd(28))} ${state}`);
     }
   }

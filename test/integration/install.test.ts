@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -34,7 +34,9 @@ function git(args: string[]): { stdout: string; status: number } {
 
 function readHelperValuesSync(): string[] {
   const r = git(["--get-all", HELPER_KEY]);
-  if (r.status !== 0 && r.stdout === "") return [];
+  if (r.status !== 0 && r.stdout === "") {
+    return [];
+  }
   return r.stdout.replace(/\r?\n$/, "").split(/\r?\n/);
 }
 

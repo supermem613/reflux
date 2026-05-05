@@ -28,7 +28,9 @@ import { Config, loadConfig } from "./config.js";
  */
 export function normalizeRemoteUrl(input: string): string {
   let url = input.trim();
-  if (!url) return "";
+  if (!url) {
+    return "";
+  }
 
   // git@host:owner/repo  →  https://host/owner/repo
   const sshShort = url.match(/^(?:[^@\s]+@)([^:/\s]+):(.+)$/);
@@ -73,14 +75,18 @@ export function resolveProfile(
   config: Config = loadConfig(),
 ): string | null {
   const normalized = normalizeRemoteUrl(remoteUrl);
-  if (!normalized) return null;
+  if (!normalized) {
+    return null;
+  }
 
   let bestPrefixLen = -1;
   let bestProfile: string | null = null;
 
   for (const mapping of config.mappings) {
     const prefix = normalizeRemoteUrl(mapping.prefix);
-    if (!prefix) continue;
+    if (!prefix) {
+      continue;
+    }
     if (normalized.startsWith(prefix) && prefix.length > bestPrefixLen) {
       bestPrefixLen = prefix.length;
       bestProfile = mapping.profile;
@@ -100,7 +106,9 @@ export function resolveProfileFromCredentialRequest(
 ): string | null {
   const proto = request.protocol ?? "https";
   const host = request.host;
-  if (!host) return null;
+  if (!host) {
+    return null;
+  }
   const path = request.path ?? "";
   const url = `${proto}://${host}/${path}`.replace(/\/+$/, "");
   return resolveProfile(url, config);

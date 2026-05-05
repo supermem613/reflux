@@ -110,21 +110,27 @@ describe("helper protocol — passthrough path", () => {
   });
 
   it("passes non-github.com hosts through to GCM as well", () => {
-    if (!existsSync(HELPER_BIN)) return;
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
     const result = runHelper("get", "protocol=https\nhost=dev.azure.com\n\n");
     assert.equal(result.status, 0, `expected 0, got ${result.status}: ${result.stderr}`);
     assert.deepEqual(gitCalls(), [["credential-manager", "get"]]);
   });
 
   it("forwards `erase` to GCM via `git credential-manager erase`", () => {
-    if (!existsSync(HELPER_BIN)) return;
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
     const result = runHelper("erase", "protocol=https\nhost=dev.azure.com\n\n");
     assert.equal(result.status, 0, `expected 0, got ${result.status}: ${result.stderr}`);
     assert.deepEqual(gitCalls(), [["credential-manager", "erase"]]);
   });
 
   it("forwards `store` to GCM via `git credential-manager store`", () => {
-    if (!existsSync(HELPER_BIN)) return;
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
     const result = runHelper("store", "protocol=https\nhost=dev.azure.com\nusername=foo\npassword=bar\n\n");
     assert.equal(result.status, 0, `expected 0, got ${result.status}: ${result.stderr}`);
     assert.deepEqual(gitCalls(), [["credential-manager", "store"]]);

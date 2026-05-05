@@ -90,7 +90,9 @@ export function authStatus(hostname = "github.com"): GhAccount[] {
   } catch {
     return [];
   }
-  if (r.error) return [];
+  if (r.error) {
+    return [];
+  }
   const text = `${r.stdout ?? ""}\n${r.stderr ?? ""}`;
   const accounts: GhAccount[] = [];
   let current: GhAccount | null = null;
@@ -177,7 +179,9 @@ export function logout(ghUser: string, hostname = "github.com"): { ok: boolean; 
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
-  if (r.error) return { ok: false, reason: r.error.message };
+  if (r.error) {
+    return { ok: false, reason: r.error.message };
+  }
   if (r.status !== 0) {
     const stderr = (r.stderr ?? "").trim();
     return { ok: false, reason: stderr || `gh auth logout exited ${r.status}` };
@@ -189,7 +193,9 @@ export function logout(ghUser: string, hostname = "github.com"): { ok: boolean; 
 export function version(): string | null {
   try {
     const r = spawnSync(GH_BIN(), ["--version"], { encoding: "utf-8", windowsHide: true, shell: needsShell(GH_BIN()) });
-    if (r.status !== 0) return null;
+    if (r.status !== 0) {
+      return null;
+    }
     return (r.stdout ?? "").split(/\r?\n/)[0]?.trim() || null;
   } catch {
     return null;

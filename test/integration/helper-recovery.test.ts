@@ -249,7 +249,9 @@ describe("helper — auto-login recovery for missing token", () => {
   });
 
   it("emits quit=1 and does not call GCM when login succeeds but the wrong user signs in", () => {
-    if (!existsSync(HELPER_BIN)) return;
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
 
     // User signs in as the wrong github account.
     const r = runHelper(REQUEST, { STUB_GH_LOGIN_AS: "someone-else" });
@@ -264,7 +266,9 @@ describe("helper — auto-login recovery for missing token", () => {
   });
 
   it("respects REFLUX_NO_AUTO_LOGIN=1 by quitting instead of driving login", () => {
-    if (!existsSync(HELPER_BIN)) return;
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
 
     const r = runHelper(REQUEST, { REFLUX_NO_AUTO_LOGIN: "1", STUB_GH_LOGIN_AS: "supermem613" });
 
@@ -280,7 +284,9 @@ describe("helper — auto-login recovery for missing token", () => {
   });
 
   it("emits quit=1 with a clear message when gh auth login itself fails", () => {
-    if (!existsSync(HELPER_BIN)) return;
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
 
     const r = runHelper(REQUEST, { STUB_GH_LOGIN_AS: "__FAIL__" });
 
@@ -292,7 +298,9 @@ describe("helper — auto-login recovery for missing token", () => {
   });
 
   it("emits quit=1 with install instructions when gh CLI is absent", () => {
-    if (!existsSync(HELPER_BIN)) return;
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
 
     const r = runHelper(REQUEST, { REFLUX_GH_BIN: join(tmp, "no-gh-here.exe") });
 
@@ -304,7 +312,9 @@ describe("helper — auto-login recovery for missing token", () => {
   });
 
   it("when gh already has the token, returns it directly without driving login", () => {
-    if (!existsSync(HELPER_BIN)) return;
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
 
     // Pre-seed the stub state as if the user had already signed in.
     writeFileSync(ghStateFile, JSON.stringify({ signedIn: ["supermem613"] }) + "\n");
@@ -320,7 +330,9 @@ describe("helper — auto-login recovery for missing token", () => {
   });
 
   it("does NOT drive gh auth login for unmapped github.com requests (passthrough)", () => {
-    if (!existsSync(HELPER_BIN)) return;
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
 
     // Path has no mapping → passthrough to GCM. gh must not be invoked.
     const r = runHelper("protocol=https\nhost=github.com\npath=some-other-org/repo\n\n");
@@ -332,7 +344,9 @@ describe("helper — auto-login recovery for missing token", () => {
   });
 
   it("drives forced re-auth when git rejects a reflux-owned credential", () => {
-    if (!existsSync(HELPER_BIN)) return;
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
 
     writeFileSync(ghStateFile, JSON.stringify({ signedIn: ["supermem613"] }) + "\n");
 
@@ -354,7 +368,9 @@ describe("helper — auto-login recovery for missing token", () => {
   });
 
   it("respects REFLUX_NO_AUTO_LOGIN=1 when git rejects a reflux-owned credential", () => {
-    if (!existsSync(HELPER_BIN)) return;
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
 
     writeFileSync(ghStateFile, JSON.stringify({ signedIn: ["supermem613"] }) + "\n");
 

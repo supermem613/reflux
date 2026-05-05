@@ -196,8 +196,8 @@ async function recoverProfileAuth(
 function writeStatus(kind: "ok" | "warn" | "error", headline: string, hints: string[] = []): void {
   const icon =
     kind === "ok" ? chalk.green("✓") :
-    kind === "error" ? chalk.red("✗") :
-    chalk.yellow("⚠");
+      kind === "error" ? chalk.red("✗") :
+        chalk.yellow("⚠");
   const lines: string[] = ["", `  ${icon} ${headline}`];
   for (const h of hints) {
     lines.push(`    ${chalk.dim(h)}`);

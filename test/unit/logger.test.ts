@@ -18,10 +18,16 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (originalLocalAppData === undefined) delete process.env.LOCALAPPDATA;
-  else process.env.LOCALAPPDATA = originalLocalAppData;
-  if (originalDebug === undefined) delete process.env.REFLUX_DEBUG;
-  else process.env.REFLUX_DEBUG = originalDebug;
+  if (originalLocalAppData === undefined) {
+    delete process.env.LOCALAPPDATA;
+  } else {
+    process.env.LOCALAPPDATA = originalLocalAppData;
+  }
+  if (originalDebug === undefined) {
+    delete process.env.REFLUX_DEBUG;
+  } else {
+    process.env.REFLUX_DEBUG = originalDebug;
+  }
   rmSync(tmp, { recursive: true, force: true });
 });
 

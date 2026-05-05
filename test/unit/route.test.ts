@@ -53,7 +53,9 @@ describe("routeRequest", () => {
       configWithMapping,
     );
     assert.equal(decision.kind, "reflux");
-    if (decision.kind === "reflux") assert.equal(decision.profile, "work");
+    if (decision.kind === "reflux") {
+      assert.equal(decision.profile, "work");
+    }
   });
 
   it("routes generic github.com to the catch-all", () => {
@@ -62,7 +64,9 @@ describe("routeRequest", () => {
       configWithMapping,
     );
     assert.equal(decision.kind, "reflux");
-    if (decision.kind === "reflux") assert.equal(decision.profile, "personal");
+    if (decision.kind === "reflux") {
+      assert.equal(decision.profile, "personal");
+    }
   });
 
   it("is host-case-insensitive", () => {

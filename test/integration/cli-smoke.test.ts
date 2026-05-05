@@ -38,7 +38,9 @@ function reflux(...args: string[]): { stdout: string; stderr: string; status: nu
 
 describe("CLI smoke tests", () => {
   it("`reflux` (no args) prints version + help and exits 0", () => {
-    if (!existsSync(CLI_BIN)) throw new Error("Build dist/cli.js first");
+    if (!existsSync(CLI_BIN)) {
+      throw new Error("Build dist/cli.js first");
+    }
     const r = reflux();
     assert.equal(r.status, 0);
     assert.match(r.stdout, /reflux v\d+\.\d+\.\d+/);
