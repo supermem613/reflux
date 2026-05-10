@@ -51,7 +51,7 @@ export async function passthroughToGcm(
   //   3. Plain "git" — found via PATH; on Windows this is git.exe and
   //      `git credential-manager` resolves GCM via libexec/git-core.
   const gitBin = process.env.REFLUX_GIT_BIN ?? options.gitBin ?? "git";
-  // Node 20.12+ refuses to spawn .cmd/.bat directly without shell:true
+  // Current Node runtimes refuse to spawn .cmd/.bat directly without shell:true
   // (CVE-2024-27980). Production `git` is git.exe so this is a no-op there;
   // it only kicks in for test stubs.
   const useShell = /\.(cmd|bat)$/i.test(gitBin);

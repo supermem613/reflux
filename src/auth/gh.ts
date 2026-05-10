@@ -14,7 +14,7 @@ import { spawn, spawnSync } from "node:child_process";
 
 const GH_BIN = (): string => process.env.REFLUX_GH_BIN ?? "gh";
 
-// Windows blocks direct spawn of .cmd / .bat since the Node 20.12 CVE fix.
+// Windows blocks direct spawn of .cmd / .bat in current Node runtimes.
 // Production gh is "gh" or "gh.exe" — this only flips on for test shims.
 const needsShell = (bin: string): boolean => /\.(cmd|bat)$/i.test(bin);
 
