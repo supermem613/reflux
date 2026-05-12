@@ -33,9 +33,24 @@ const execAsync = promisify(exec);
  *      to leave behind.
  */
 
-interface UpdateTarget {
+export interface UpdateTarget {
   dir: string;
   isLinked: boolean;
+}
+
+type ExecResult = {
+  stdout: string;
+  stderr: string;
+}
+
+export type UpdateDeps = {
+  target?: UpdateTarget;
+  runGit?: (args: string[], cwd: string) => Promise<ExecResult>;
+  runCommand?: (command: string, cwd: string) => Promise<void>;
+}
+
+export function gitPullMadeNoChanges(output: string): boolean {
+  return /already up[- ]to[- ]date\.?/i.test(output);
 }
 
 function resolveModuleRoot(): string {
@@ -65,10 +80,19 @@ async function locateUpdateTarget(): Promise<UpdateTarget | null> {
   return null;
 }
 
-async function runStep(label: string, cmd: string, cwd: string): Promise<void> {
+async function defaultRunCommand(cmd: string, cwd: string): Promise<void> {
+  await execAsync(cmd, { cwd });
+}
+
+async function runStep(
+  label: string,
+  cmd: string,
+  cwd: string,
+  runCommand: (command: string, cwd: string) => Promise<void>,
+): Promise<void> {
   console.log(chalk.bold(`\n  ${label}`));
   try {
-    await execAsync(cmd, { cwd });
+    await runCommand(cmd, cwd);
     console.log(chalk.green(`    ✓ ${label.replace(/^[^\w]+\s*/, "")} done.`));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -77,8 +101,10 @@ async function runStep(label: string, cmd: string, cwd: string): Promise<void> {
   }
 }
 
-export async function updateCommand(): Promise<void> {
-  const target = await locateUpdateTarget();
+export async function updateCommand(deps: UpdateDeps = {}): Promise<void> {
+  const target = deps.target ?? await locateUpdateTarget();
+  const runGit = deps.runGit ?? git;
+  const runCommand = deps.runCommand ?? defaultRunCommand;
 
   if (!target) {
     const moduleRoot = resolveModuleRoot();
@@ -97,10 +123,12 @@ export async function updateCommand(): Promise<void> {
 
   console.log(chalk.bold("  ↓ Pulling latest..."));
   try {
-    const result = await git(["pull", "--ff-only"], target.dir);
+    const result = await runGit(["pull", "--ff-only"], target.dir);
     const output = (result.stdout + result.stderr).trim();
-    if (output.includes("Already up to date")) {
+    if (gitPullMadeNoChanges(output)) {
       console.log(chalk.dim("    Already up to date."));
+      console.log(chalk.dim("    Skipping install and build."));
+      return;
     } else {
       console.log(chalk.green("    ✓ Pulled new changes."));
     }
@@ -110,8 +138,8 @@ export async function updateCommand(): Promise<void> {
     process.exit(1);
   }
 
-  await runStep("⬡ Installing dependencies...", "npm install --no-audit --no-fund", target.dir);
-  await runStep("🔨 Building...", "npm run build", target.dir);
+  await runStep("⬡ Installing dependencies...", "npm install --no-audit --no-fund", target.dir, runCommand);
+  await runStep("🔨 Building...", "npm run build", target.dir, runCommand);
 
   if (!target.isLinked) {
     // The dev clone was found via the fallback, but the running reflux is
