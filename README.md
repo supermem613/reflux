@@ -30,13 +30,15 @@ per-URL router on top of `gh`'s multi-account auth.
 
 ## How it works
 
-1. **`reflux profile add <name> --gh-user <login>`** — bind a friendly
-   profile name to a GitHub login as it appears in `gh auth status`.
-2. **`reflux login <name>`** — delegates to `gh auth login` if the profile's
+1. **Auto-learn personal owners** — if a GitHub repo owner matches a signed-in
+   `gh` account, reflux creates the profile and owner mapping on first use.
+2. **`reflux profile add <name> --gh-user <login>`** — bind a friendly
+   profile name to a GitHub login for org owners or explicit routes.
+3. **`reflux login <name>`** — delegates to `gh auth login` if the profile's
    gh user isn't signed in yet. This is the only step that opens a browser.
-3. **`reflux map add <url-prefix> <name>`** — route URLs starting with the
-   prefix to the profile. Longest-prefix wins.
-4. **`reflux install`** — register `git-credential-reflux` as a helper for
+4. **`reflux map add <url-prefix> <name>`** — route URLs starting with the
+   prefix to the profile. Longest-prefix wins. Org owners should be explicit.
+5. **`reflux install`** — register `git-credential-reflux` as a helper for
    `https://github.com` in your global `.gitconfig`, before the existing
    helper chain.
 
@@ -70,21 +72,23 @@ gh auth status
 #   ✓ Logged in to github.com account <work-login> (keyring)
 #   - Active account: false
 
-# Bind reflux profiles to those gh logins.
-reflux profile add personal --gh-user <personal-login>
+# Add explicit mappings for org owners. Personal-owner repos can auto-learn
+# when the owner matches a signed-in gh account.
 reflux profile add work     --gh-user <work-login>
 
 # Map remote URLs (longest prefix wins).
 reflux map add https://github.com/<work-org>/      work
 reflux map add https://github.com/<work-login>/    work
-reflux map add https://github.com/                 personal
 
 # Wire reflux into git.
 reflux install
 ```
 
 That's it. `reflux status` shows your profile and mapping state at a glance;
-`reflux doctor` diagnoses installation problems.
+`reflux doctor` diagnoses installation and routing config problems. Reflux
+auto-creates profiles and owner mappings for personal GitHub repos when the
+repo owner matches a signed-in `gh` account; org repos should be mapped
+explicitly.
 
 ## Multi-identity repos
 
@@ -112,11 +116,11 @@ git push work main     # → routed to work     → gh user <work-login>
 | `reflux map add <prefix> <profile>` | Route URLs starting with `<prefix>` to `<profile>` |
 | `reflux map list` | List mappings, sorted by resolution priority |
 | `reflux map remove <prefix>` | Remove a mapping |
-| `reflux map resolve <url>` | Show which profile a URL would resolve to (debugging) |
+| `reflux map resolve <url>` | Show the explicit mapping for a URL, if one exists |
 | `reflux login <profile>` | Delegate to `gh auth login` for the profile's gh user |
 | `reflux logout <profile>` | Delegate to `gh auth logout` for the profile's gh user |
 | `reflux status` | Show gh state, profiles, mappings |
-| `reflux doctor` | Diagnose installation problems |
+| `reflux doctor` | Diagnose installation and routing config problems |
 | `reflux install` | Register with git config |
 | `reflux uninstall` | Reverse `install` |
 | `reflux update` | Self-update: `git pull` → `npm install` → `npm run build` |

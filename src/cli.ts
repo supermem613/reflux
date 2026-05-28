@@ -34,7 +34,7 @@ program
 
 program
   .command("doctor")
-  .description("Health check: gh present? GCM present? config valid? each profile signed in?")
+  .description("Health check: gh present? GCM present? config valid? auto-learn ready?")
   .action(doctorCommand);
 
 program
@@ -78,7 +78,7 @@ map
 
 map
   .command("resolve")
-  .description("Show which profile a remote URL would resolve to")
+  .description("Show the explicit mapping for a remote URL, if one exists")
   .argument("<url>", "Remote URL to test")
   .action(mapResolveCommand);
 

@@ -37,7 +37,7 @@ export function statusCommand(): void {
 
   console.log("\n" + chalk.bold("Mappings"));
   if (config.mappings.length === 0) {
-    console.log(chalk.dim("  (none) — every git request will passthrough to GCM"));
+    console.log(chalk.dim("  (none) — personal github.com owners can auto-learn; org owners need explicit mappings"));
   } else {
     const sorted = [...config.mappings].sort((a, b) => b.prefix.length - a.prefix.length);
     for (const m of sorted) {

@@ -140,8 +140,8 @@ export async function installCommand(): Promise<void> {
   // Surface any missing gh sessions or other config issues now, so the user
   // sees them here instead of in the middle of the next `git pull`.
   console.log("");
-  const { doctorCommand } = await import("./doctor.js");
-  await doctorCommand();
+  const { runDoctor } = await import("./doctor.js");
+  await runDoctor();
 }
 
 async function tryUnsetValue(valuePattern: string): Promise<boolean> {

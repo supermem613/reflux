@@ -38,6 +38,7 @@ import {
 } from "./helper/protocol.js";
 import { passthroughToGcm } from "./helper/passthrough.js";
 import { routeRequest } from "./helper/route.js";
+import { autoLearnGithubOwner } from "./helper/auto-learn.js";
 import { createLogger } from "./utils/logger.js";
 
 const log = createLogger("helper");
@@ -47,8 +48,8 @@ function isCredentialAction(value: string | undefined): value is CredentialActio
 }
 
 async function handleGet(request: CredentialRequest, stdinBuffer: string): Promise<number> {
-  const config = loadConfig();
-  const decision = routeRequest(request, config);
+  let config = loadConfig();
+  let decision = routeRequest(request, config);
 
   if (decision.kind === "passthrough") {
     log.debug("passthrough", { url: requestUrl(request), reason: decision.reason });
@@ -56,13 +57,32 @@ async function handleGet(request: CredentialRequest, stdinBuffer: string): Promi
     return exitCode;
   }
 
+  if (decision.kind === "unmapped-github") {
+    const learned = await autoLearnGithubOwner(decision.owner);
+    if (!learned.ok) {
+      return quitWithStatus("error", `Reflux owns GitHub auth but cannot route ${requestUrl(request)}.`, [
+        learned.reason,
+        ...learned.hints,
+      ]);
+    }
+    log.info("auto-learned github mapping", {
+      url: requestUrl(request),
+      profile: learned.profile,
+      ghUser: learned.ghUser,
+      created: learned.created,
+    });
+    decision = { kind: "reflux", profile: learned.profile };
+    config = loadConfig();
+  }
+
   const profileName = decision.profile;
   const profile = getProfile(profileName, config);
   if (!profile) {
-    // Routing decided this is reflux's, but the profile vanished between the
-    // mapping read and the lookup. Treat as no-op so the next helper tries.
     log.warn("routed profile missing in config", { profile: profileName });
-    return 0;
+    return quitWithStatus("error", `Reflux owns GitHub auth but profile ${chalk.cyan(profileName)} is missing.`, [
+      `Run \`reflux doctor\` to inspect config state.`,
+      `Then repair the mapping with \`reflux map add ${requestUrl(request)} <profile>\`.`,
+    ]);
   }
 
   log.debug("reflux-owned", { url: requestUrl(request), profile: profileName, ghUser: profile.ghUser });
@@ -84,8 +104,7 @@ async function handleGet(request: CredentialRequest, stdinBuffer: string): Promi
         `Reason: ${result.reason}`,
         `Run \`reflux doctor\` to inspect gh + reflux state.`,
       ]);
-      process.stdout.write("quit=1\n\n");
-      return 0;
+      return quit();
     }
   }
 
@@ -95,6 +114,16 @@ async function handleGet(request: CredentialRequest, stdinBuffer: string): Promi
   });
   process.stdout.write(response);
   return 0;
+}
+
+function quit(): number {
+  process.stdout.write("quit=1\n\n");
+  return 0;
+}
+
+function quitWithStatus(kind: "ok" | "warn" | "error", headline: string, hints: string[] = []): number {
+  writeStatus(kind, headline, hints);
+  return quit();
 }
 
 interface RecoverProfileAuthOptions {
@@ -213,6 +242,12 @@ async function handleStore(request: CredentialRequest, stdinBuffer: string): Pro
     const { exitCode } = await passthroughToGcm("store", { stdinBuffer });
     return exitCode;
   }
+  if (decision.kind === "unmapped-github") {
+    log.warn("store: refusing github.com passthrough for unmapped request", {
+      url: requestUrl(request),
+      reason: decision.reason,
+    });
+  }
   // gh owns the token lifecycle; nothing to record.
   return 0;
 }
@@ -223,6 +258,13 @@ async function handleErase(request: CredentialRequest, stdinBuffer: string): Pro
   if (decision.kind === "passthrough") {
     const { exitCode } = await passthroughToGcm("erase", { stdinBuffer });
     return exitCode;
+  }
+  if (decision.kind === "unmapped-github") {
+    writeStatus("error", `GitHub rejected a credential for an unmapped Reflux-owned URL.`, [
+      `URL: ${requestUrl(request)}`,
+      `Add an explicit mapping: reflux map add https://github.com/${decision.owner ?? "<owner>"}/ <profile>`,
+    ]);
+    return 0;
   }
   // Git calls erase after GitHub rejects the credential Reflux just served.
   // Force re-auth only for the mapped gh user so the next Git operation gets
@@ -269,8 +311,19 @@ async function main(): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log.error(`${action} failed`, { error: msg });
+    if (request.host?.toLowerCase() === "github.com") {
+      writeStatus("error", `Reflux owns GitHub auth but the helper failed.`, [
+        msg,
+        `Run \`reflux doctor\` to inspect config and installation state.`,
+      ]);
+      if (action === "get") {
+        process.stdout.write("quit=1\n\n");
+      }
+      process.exit(0);
+    }
     process.stderr.write(`reflux: ${msg}\n`);
-    // Exit non-zero so git falls through to the next configured helper.
+    // Non-GitHub hosts are passthrough scope, so leave them available to later
+    // helpers if reflux itself failed before it could delegate.
     process.exit(1);
   }
 }

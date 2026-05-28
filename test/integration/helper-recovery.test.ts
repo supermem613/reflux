@@ -208,6 +208,21 @@ function gitStubCalls(): string[][] {
     .map((l) => JSON.parse(l) as string[]);
 }
 
+function configFile(): string {
+  return join(tmp, ".reflux", "config.json");
+}
+
+function writeConfig(config: unknown): void {
+  writeFileSync(configFile(), JSON.stringify(config) + "\n");
+}
+
+function readConfig(): { profiles: Array<{ name: string; ghUser: string }>; mappings: Array<{ prefix: string; profile: string }> } {
+  return JSON.parse(readFileSync(configFile(), "utf-8")) as {
+    profiles: Array<{ name: string; ghUser: string }>;
+    mappings: Array<{ prefix: string; profile: string }>;
+  };
+}
+
 const REQUEST = "protocol=https\nhost=github.com\npath=supermem613/dotfiles\n\n";
 
 describe("helper — auto-login recovery for missing token", () => {
@@ -329,18 +344,60 @@ describe("helper — auto-login recovery for missing token", () => {
     assert.equal(calls[0][1], "token");
   });
 
-  it("does NOT drive gh auth login for unmapped github.com requests (passthrough)", () => {
+  it("auto-learns an unmapped personal GitHub owner and does not call GCM", () => {
     if (!existsSync(HELPER_BIN)) {
       return;
     }
 
-    // Path has no mapping → passthrough to GCM. gh must not be invoked.
-    const r = runHelper("protocol=https\nhost=github.com\npath=some-other-org/repo\n\n");
+    writeConfig({ version: 1, profiles: [], mappings: [] });
+    writeFileSync(ghStateFile, JSON.stringify({ signedIn: ["supermem613"] }) + "\n");
+
+    const r = runHelper("protocol=https\nhost=github.com\npath=supermem613/reflux\n\n");
 
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /username=stub-passthrough-user/);
-    assert.equal(ghCalls().length, 0, "gh must not be invoked for passthrough requests");
-    assert.deepEqual(gitStubCalls(), [["credential-manager", "get"]]);
+    assert.match(r.stdout, /username=supermem613/);
+    assert.match(r.stdout, /password=ghs_stubtoken_for_supermem613/);
+    assert.deepEqual(gitStubCalls(), [], "unmapped github.com must not invoke GCM");
+    const config = readConfig();
+    assert.deepEqual(config.profiles, [{ name: "supermem613", ghUser: "supermem613" }]);
+    assert.deepEqual(config.mappings, [{ prefix: "https://github.com/supermem613/", profile: "supermem613" }]);
+  });
+
+  it("auto-learns matching underscore gh users with a valid profile name", () => {
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
+
+    writeConfig({ version: 1, profiles: [], mappings: [] });
+    writeFileSync(ghStateFile, JSON.stringify({ signedIn: ["supermem613", "marcusm_microsoft"] }) + "\n");
+
+    const r = runHelper("protocol=https\nhost=github.com\npath=marcusm_microsoft/reflux\n\n");
+
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /username=marcusm_microsoft/);
+    assert.deepEqual(gitStubCalls(), [], "unmapped github.com must not invoke GCM");
+    const config = readConfig();
+    assert.deepEqual(config.profiles, [{ name: "marcusm-microsoft", ghUser: "marcusm_microsoft" }]);
+    assert.deepEqual(config.mappings, [{ prefix: "https://github.com/marcusm_microsoft/", profile: "marcusm-microsoft" }]);
+  });
+
+  it("quits loudly for an unmapped org owner when multiple gh accounts exist", () => {
+    if (!existsSync(HELPER_BIN)) {
+      return;
+    }
+
+    writeConfig({ version: 1, profiles: [], mappings: [] });
+    writeFileSync(ghStateFile, JSON.stringify({ signedIn: ["supermem613", "marcusm_microsoft"] }) + "\n");
+
+    const r = runHelper("protocol=https\nhost=github.com\npath=acme-org/repo\n\n");
+
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /quit=1/);
+    assert.match(r.stderr, /cannot route/);
+    assert.match(r.stderr, /No signed-in gh account matches GitHub owner 'acme-org'/);
+    assert.match(r.stderr, /reflux map add https:\/\/github\.com\/acme-org\//);
+    assert.deepEqual(gitStubCalls(), [], "unmapped github.com must not invoke GCM");
+    assert.deepEqual(readConfig(), { version: 1, profiles: [], mappings: [] });
   });
 
   it("drives forced re-auth when git rejects a reflux-owned credential", () => {

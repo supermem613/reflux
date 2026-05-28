@@ -61,6 +61,54 @@ function checkConfig(): CheckResult {
   }
 }
 
+function checkGhAccounts(accounts: { user: string }[]): CheckResult {
+  if (accounts.length === 0) {
+    return {
+      name: "gh accounts",
+      ok: false,
+      detail: "no signed-in gh accounts; reflux cannot auto-learn GitHub owner mappings",
+      hint: "Run `gh auth login --hostname github.com --git-protocol https --web` and retry.",
+    };
+  }
+  return {
+    name: "gh accounts",
+    ok: true,
+    detail: `${accounts.length} signed-in account(s): ${accounts.map((a) => a.user).join(", ")}`,
+  };
+}
+
+function checkProfilesConfigured(): CheckResult {
+  const config = loadConfig();
+  if (config.profiles.length === 0) {
+    return {
+      name: "profiles configured",
+      ok: true,
+      detail: "none yet; reflux will auto-create profiles for personal GitHub owners that match signed-in gh accounts",
+    };
+  }
+  return {
+    name: "profiles configured",
+    ok: true,
+    detail: `${config.profiles.length} profile(s) configured`,
+  };
+}
+
+function checkMappingsConfigured(): CheckResult {
+  const config = loadConfig();
+  if (config.mappings.length === 0) {
+    return {
+      name: "mappings configured",
+      ok: true,
+      detail: "none yet; personal-owner repos auto-learn, org repos require explicit `reflux map add`",
+    };
+  }
+  return {
+    name: "mappings configured",
+    ok: true,
+    detail: `${config.mappings.length} mapping(s) configured`,
+  };
+}
+
 async function checkHelperRegistered(): Promise<CheckResult> {
   const values = await readHelperValues();
   const state = inspectHelperList(values);
@@ -105,7 +153,7 @@ function checkProfile(name: string, ghUser: string, accounts: { user: string }[]
   };
 }
 
-export async function doctorCommand(): Promise<void> {
+export async function runDoctor(): Promise<number> {
   const results: CheckResult[] = [
     checkGh(),
     await checkGcm(),
@@ -123,6 +171,9 @@ export async function doctorCommand(): Promise<void> {
     }
     if (config) {
       const accounts = authStatus();
+      results.push(checkGhAccounts(accounts));
+      results.push(checkProfilesConfigured());
+      results.push(checkMappingsConfigured());
       for (const p of config.profiles) {
         results.push(checkProfile(p.name, p.ghUser, accounts));
       }
@@ -145,6 +196,13 @@ export async function doctorCommand(): Promise<void> {
     console.log("\n" + chalk.green("All checks passed."));
   } else {
     console.log("\n" + chalk.red(`${bad} check(s) failed.`));
+  }
+  return bad;
+}
+
+export async function doctorCommand(): Promise<void> {
+  const bad = await runDoctor();
+  if (bad > 0) {
     process.exitCode = 1;
   }
 }

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { routeRequest } from "../../src/helper/route.js";
+import { githubOwnerFromPath, routeRequest } from "../../src/helper/route.js";
 import { Config } from "../../src/core/config.js";
 
 const configWithMapping: Config = {
@@ -34,17 +34,20 @@ describe("routeRequest", () => {
     }
   });
 
-  it("passes through github.com when no mapping matches", () => {
+  it("marks github.com as unmapped when no mapping matches", () => {
     const decision = routeRequest(
       { host: "github.com", path: "unmapped-org/repo" },
       configAcmeOnly,
     );
-    assert.equal(decision.kind, "passthrough");
+    assert.equal(decision.kind, "unmapped-github");
+    if (decision.kind === "unmapped-github") {
+      assert.equal(decision.owner, "unmapped-org");
+    }
   });
 
-  it("passes through github.com when no mappings exist at all", () => {
+  it("marks github.com as unmapped when no mappings exist at all", () => {
     const decision = routeRequest({ host: "github.com", path: "any/repo" }, configEmpty);
-    assert.equal(decision.kind, "passthrough");
+    assert.equal(decision.kind, "unmapped-github");
   });
 
   it("routes to the matched profile (longest prefix wins)", () => {
@@ -75,5 +78,16 @@ describe("routeRequest", () => {
       configWithMapping,
     );
     assert.equal(decision.kind, "reflux");
+  });
+});
+
+describe("githubOwnerFromPath", () => {
+  it("extracts the owner segment from a Git credential path", () => {
+    assert.equal(githubOwnerFromPath("supermem613/reflux.git"), "supermem613");
+  });
+
+  it("returns undefined when the path is missing", () => {
+    assert.equal(githubOwnerFromPath(undefined), undefined);
+    assert.equal(githubOwnerFromPath(""), undefined);
   });
 });

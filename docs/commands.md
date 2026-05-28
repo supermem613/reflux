@@ -70,7 +70,9 @@ reflux map resolve https://github.com/acme/widgets.git
 # https://github.com/acme/widgets → work
 ```
 
-Exits 1 if no mapping matches (the URL would passthrough to GCM).
+Exits 1 if no explicit mapping matches. For `github.com`, that does not mean
+helper passthrough: helper `get` requests auto-learn safe personal-owner
+mappings or return `quit=1` with explicit mapping guidance.
 
 ## `reflux login <profile>`
 
@@ -106,6 +108,10 @@ Checks:
 - `gh CLI` is on PATH and reports a version.
 - `git-credential-manager` is on PATH (used for passthrough).
 - `~/.reflux/config.json` parses cleanly.
+- At least one `gh` account is signed in so reflux can auto-learn personal
+  owner mappings.
+- Profiles and mappings are listed. Empty profiles and mappings are allowed:
+  personal-owner repos auto-learn, while org repos require explicit mappings.
 - Each profile's gh user appears in `gh auth status`.
 
 ## `reflux install`
@@ -121,9 +127,9 @@ git config --global --add credential.https://github.com.helper reflux
 ```
 
 The empty-string entry clears any inherited helper for the URL scope so
-reflux runs first. Reflux itself passes through to GCM for unmapped URLs,
-so the user gets the union of behaviours. Other URL scopes (e.g.
-`dev.azure.com`) are untouched.
+reflux runs first. Reflux passes through to GCM only for non-GitHub hosts.
+For `github.com`, missing mappings auto-learn when safe or fail loud with
+mapping guidance. Other URL scopes (e.g. `dev.azure.com`) are untouched.
 
 Idempotent — running it twice is harmless.
 

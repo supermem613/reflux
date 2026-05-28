@@ -41,9 +41,9 @@ Considered and rejected. PATs require:
 
 For this user, the rotation hassle outweighed the silent-auth benefit.
 You can still use a PAT in the username:password URL form for individual
-repos if you want — it composes cleanly with reflux (reflux passes
-through unmapped URLs, and explicit URL credentials bypass the helper
-chain entirely).
+repos if you want. Explicit URL credentials bypass the helper chain entirely.
+For `github.com`, reflux owns helper requests even when no mapping exists, so
+unmapped URLs auto-learn when safe or fail loud with mapping guidance.
 
 ## Why not SSH?
 

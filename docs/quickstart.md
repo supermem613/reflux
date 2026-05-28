@@ -61,22 +61,23 @@ The "Active account" line doesn't matter to reflux — reflux always asks
 ## 3. Configure reflux profiles + mappings
 
 ```powershell
-reflux profile add personal --gh-user <personal-login>
+# Personal-owner repos can auto-learn after install when the owner matches a
+# signed-in gh account. Add explicit mappings for org owners and any owner that
+# should route to a different gh login.
 reflux profile add work     --gh-user <work-login>
 
 # Longest-prefix wins. List the most specific routes first; they all coexist.
 reflux map add https://github.com/<work-org>/         work
 reflux map add https://github.com/<work-login>/       work
-reflux map add https://github.com/<personal-login>/   personal
-# Optional fall-through for any other URL on github.com:
-reflux map add https://github.com/                    personal
 
 reflux status    # ● next to each signed-in profile; mappings sorted by priority
 reflux doctor    # all checks should be ✓
 ```
 
-`reflux profile add` rejects unknown gh users with a warning; `reflux map
-add` rejects mappings that point at a non-existent profile.
+`reflux profile add` warns when the gh user is not signed in yet; `reflux map
+add` rejects mappings that point at a non-existent profile. Avoid catch-all
+`https://github.com/` mappings unless you intentionally want one identity to
+handle every otherwise-unmapped GitHub owner.
 
 ## 4. Smoke-test routing without touching git
 
@@ -85,7 +86,8 @@ reflux map resolve https://github.com/<work-org>/<work-repo>.git
 # → https://github.com/<work-org>/<work-repo> → work
 
 reflux map resolve https://github.com/<personal-login>/<personal-repo>.git
-# → https://github.com/<personal-login>/<personal-repo> → personal
+# If no explicit mapping exists, this exits 1. The helper can still auto-learn
+# this personal-owner route on first git credential request.
 
 # Drive the helper protocol directly to prove `gh` returns a token:
 "protocol=https`nhost=github.com`npath=<work-org>/<work-repo>.git`n" | git-credential-reflux get
@@ -143,8 +145,8 @@ cd <work-repo>; git fetch
 ```
 
 The log will show one line per helper invocation with the URL, the
-matching mapping (or `passthrough`), the resolved profile, and the gh
-user used.
+matching mapping, an auto-learn event, a passthrough for non-GitHub hosts, or
+a quit decision with mapping guidance.
 
 ## Rollback
 

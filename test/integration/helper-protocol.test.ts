@@ -99,14 +99,29 @@ function gitCalls(): string[][] {
 }
 
 describe("helper protocol — passthrough path", () => {
-  it("passes unmapped github.com through to `git credential-manager get`", () => {
+  it("does not pass unmapped github.com through to `git credential-manager get`", () => {
     if (!existsSync(HELPER_BIN)) {
       throw new Error(`Helper not built: run \`npm run build\` first. Expected ${HELPER_BIN}`);
     }
     const result = runHelper("get", "protocol=https\nhost=github.com\n\n");
     assert.equal(result.status, 0, `expected 0, got ${result.status}: ${result.stderr}`);
-    assert.match(result.stdout, /username=stub-passthrough-user/);
-    assert.deepEqual(gitCalls(), [["credential-manager", "get"]]);
+    assert.match(result.stdout, /quit=1/);
+    assert.match(result.stderr, /Reflux owns GitHub auth/);
+    assert.deepEqual(gitCalls(), []);
+  });
+
+  it("does not pass malformed-config github.com requests through to GCM", () => {
+    if (!existsSync(HELPER_BIN)) {
+      throw new Error(`Helper not built: run \`npm run build\` first. Expected ${HELPER_BIN}`);
+    }
+    writeFileSync(join(tmp, ".reflux", "config.json"), "{ this is not json\n");
+
+    const result = runHelper("get", "protocol=https\nhost=github.com\npath=supermem613/reflux\n\n");
+
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /quit=1/);
+    assert.match(result.stderr, /helper failed/);
+    assert.deepEqual(gitCalls(), []);
   });
 
   it("passes non-github.com hosts through to GCM as well", () => {

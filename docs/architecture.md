@@ -17,9 +17,9 @@ piece `gh auth git-credential` cannot do, because it only ever serves the
                 ▼                                          ▼
         ┌──────────────────┐                  ┌────────────────────────┐
         │ ~/.reflux/       │                  │ host not github.com?   │
-        │   config.json    │                  │ no mapping match?      │
-        │ profiles+maps    │                  │ → spawn GCM, pipe IO   │
-        └────────┬─────────┘                  └────────────────────────┘
+        │   config.json    │                  │ → spawn GCM, pipe IO   │
+        │ profiles+maps    │                  └────────────────────────┘
+        └────────┬─────────┘
                  │ longest-prefix
                  ▼
         ┌──────────────────┐
@@ -110,11 +110,13 @@ so a single mapping prefix covers every URL form a git remote might present.
 The router's three branches (`src/helper/route.ts`):
 
 1. **Host outside reflux scope** (anything other than `github.com`) →
-   passthrough to GCM. Reflux is github.com-only in v0.1.0.
-2. **github.com with no matching mapping** → passthrough to GCM. Mapped
-   identity is opt-in: unmapped GitHub repos keep working with whatever GCM
-   has cached.
-3. **github.com with a mapping** → reflux serves the request from `gh`.
+   passthrough to GCM. Reflux is github.com-only.
+2. **github.com with a mapping** → reflux serves the request from `gh`.
+3. **github.com with no matching mapping** → reflux still owns the request.
+   If the owner matches a signed-in `gh` account, reflux auto-creates the
+   profile and owner mapping. If the owner is an org or otherwise ambiguous,
+   reflux emits `quit=1` with an explicit `reflux map add` command instead of
+   falling through to GCM.
 
 ## Why no token caching
 
@@ -141,6 +143,23 @@ This is deliberate: by the time a mapping resolved, reflux knows exactly which
 GitHub account is required, so the most useful recovery is the same login flow
 the user would have run manually.
 
+## Failure mode: github.com has no mapping
+
+Unmapped GitHub URLs are not passed to GCM. Reflux extracts the first path
+segment as the owner. If that owner matches a signed-in `gh` account, reflux
+creates a profile if needed, writes `https://github.com/<owner>/` to
+`~/.reflux/config.json`, reloads config, and serves the token from `gh`.
+
+If no signed-in account matches the owner, reflux prints `quit=1` and guidance
+such as:
+
+```powershell
+reflux map add https://github.com/odsp-microsoft/ <profile>
+```
+
+This keeps batch operations such as `marshal sync -y` from silently re-entering
+GCM prompts for GitHub after reflux has been installed.
+
 ## Failure mode: git rejects our token (`erase` action)
 
 When git tells us `erase` (the credential we served was rejected), reflux
@@ -150,7 +169,7 @@ but the user gets a targeted re-auth prompt instead of only a raw GitHub
 `Invalid username or token` error, and the next Git operation receives a fresh
 token.
 
-## Why pass through unmapped hosts to GCM?
+## Why pass through non-GitHub hosts to GCM?
 
 Because reflux's value-add is per-identity routing for GitHub. Azure DevOps,
 on-prem GitHub Enterprise, gitea, and self-hosted git instances are well

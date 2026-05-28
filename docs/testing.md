@@ -29,8 +29,8 @@ debugging (rarely useful).
 | Layer | Stubbed | Why |
 |---|---|---|
 | `gh` binary | Yes — via `REFLUX_GH_BIN` env override pointing at a generated `.cmd` shim that runs a Node.js stub script. | Gives unit tests deterministic, fast control over `gh` outputs without depending on the developer's actual `gh` state. |
-| `git-credential-manager` | Yes — integration tests assert "GCM ran" or "helper exits non-zero with a useful message". | We don't want CI to depend on GCM being installed. |
-| `git` (e.g. for `update.ts`) | No — `reflux update` tests are not part of the suite (they'd mutate the install dir). | Self-update is mechanical; tested manually. |
+| `git` / GCM passthrough | Yes — integration tests point `REFLUX_GIT_BIN` at a generated git shim and assert whether `git credential-manager <action>` was invoked. | Prevents real GCM prompts and proves GitHub-owned requests do not bypass. |
+| `git` for update/install commands | Yes where practical — command tests run against temporary repos and sandboxed git config. | Keeps side effects out of the developer machine while covering command behavior. |
 | Filesystem (config + logs) | No — real fs writes against `tmp` dirs. | Catches real path/encoding bugs. |
 | Windows Credential Manager | Implicitly stubbed — reflux never touches it directly. `gh` does, and `gh` is stubbed. | Avoids real-keyring writes during tests. |
 
@@ -48,14 +48,15 @@ debugging (rarely useful).
 | `paths.test.ts` | Path resolvers honour `LOCALAPPDATA`. |
 | `profiles.test.ts` | Profile CRUD, mapping cleanup on remove. |
 | `protocol.test.ts` | Git credential helper kv-stream parser/formatter. |
-| `route.test.ts` | reflux-vs-passthrough decision matrix. |
+| `route.test.ts` | reflux-vs-passthrough decision matrix, including unmapped github.com ownership. |
 
 ### Integration (`test/integration/`)
 
 | File | Covers |
 |---|---|
 | `cli-smoke.test.ts` | Full CLI smoke against `dist/cli.js`: `--help`, `profile add/list/show/remove`, `map add/list/resolve`, `status`, `doctor`. Sandboxed `HOME` + missing `REFLUX_GH_BIN`. |
-| `helper-protocol.test.ts` | Drives `dist/helper.js` over the git credential helper protocol with no mappings configured (passthrough path). |
+| `helper-protocol.test.ts` | Drives `dist/helper.js` over the git credential helper protocol, proving non-GitHub passthrough and github.com no-bypass failures. |
+| `helper-recovery.test.ts` | Stubbed `gh` and `git` coverage for missing-token recovery, auto-learn, org-owner failures, rejected-token erase, and no GCM bypass. |
 
 ## Known coverage gaps
 

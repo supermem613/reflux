@@ -16,7 +16,7 @@ it up alongside other dotfiles.
   "mappings": [
     { "prefix": "https://github.com/<work-org>/",   "profile": "work" },
     { "prefix": "https://github.com/<work-login>/", "profile": "work" },
-    { "prefix": "https://github.com/",              "profile": "personal" }
+    { "prefix": "https://github.com/<personal-login>/", "profile": "personal" }
   ]
 }
 ```
@@ -31,7 +31,7 @@ An ordered list. Each profile has:
 
 | Field | Type | Notes |
 |---|---|---|
-| `name` | `string` matching `/^[a-z0-9][a-z0-9-]*/` | Friendly identifier used by reflux commands and shown to git as the auth username. |
+| `name` | `string` matching `/^[a-z0-9][a-z0-9-]*$/` | Friendly identifier used by reflux commands. Auto-learn converts unsupported login characters, for example `marcusm_microsoft` becomes profile `marcusm-microsoft`. |
 | `ghUser` | `string` (non-empty) | The GitHub login as it appears in `gh auth status`. Reflux passes this verbatim to `gh auth token --user <ghUser>`. |
 
 Profile names must be unique. Adding a profile via `reflux profile add` is
@@ -50,6 +50,12 @@ An ordered list. Each mapping has:
 The order in the file does not matter. Resolution is **longest-prefix
 wins**. Ties (same prefix length, different profile) shouldn't occur in
 practice — `reflux map add` rejects duplicates.
+
+Personal-owner mappings may be created automatically by the helper when the
+owner matches a signed-in `gh` account. Org owner mappings should be explicit
+because reflux cannot infer which personal or EMU account should serve them.
+Avoid catch-all `https://github.com/` mappings unless one account should handle
+every otherwise-unmapped GitHub owner.
 
 ## Validation
 

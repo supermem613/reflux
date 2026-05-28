@@ -7,7 +7,7 @@ export function mapAddCommand(prefix: string, profile: string): void {
   const config = loadConfig();
   if (!config.profiles.some((p) => p.name === profile)) {
     throw new RefluxError(
-      `Profile '${profile}' does not exist. Create it first with \`reflux profile add ${profile}\`.`,
+      `Profile '${profile}' does not exist. Create it first with \`reflux profile add ${profile} --gh-user <login>\`.`,
     );
   }
   const normalized = normalizeRemoteUrl(prefix);
@@ -53,7 +53,8 @@ export function mapRemoveCommand(prefix: string): void {
 export function mapResolveCommand(remoteUrl: string): void {
   const profile = resolveProfile(remoteUrl);
   if (!profile) {
-    console.log(chalk.dim(`No mapping for ${remoteUrl} — would passthrough to GCM.`));
+    console.log(chalk.dim(`No explicit mapping for ${remoteUrl}.`));
+    console.log(chalk.dim("  github.com helper get requests will auto-learn safe personal-owner mappings or quit with mapping guidance."));
     process.exitCode = 1;
     return;
   }

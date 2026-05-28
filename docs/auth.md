@@ -46,13 +46,15 @@ asks for the specific account a profile is bound to.
 ## Binding reflux profiles to `gh` users
 
 ```powershell
-reflux profile add personal --gh-user <personal-login>
 reflux profile add work     --gh-user <work-login>
+reflux map add https://github.com/<work-org>/ work
 ```
 
-The `--gh-user` value must match the login `gh auth status` reports
-(case-sensitive). `reflux profile list` shows whether each profile's gh user
-is currently signed in.
+Personal-owner repos can auto-learn when the repo owner matches a signed-in
+`gh` account, so you do not need to pre-create those profiles. Org repos are
+ambiguous and need explicit mappings. The `--gh-user` value must match the
+login `gh auth status` reports. `reflux profile list` shows whether each
+profile's gh user is currently signed in.
 
 ## What reflux actually calls
 
@@ -88,6 +90,10 @@ What changes with reflux:
 - **Reflux recovers when `gh`'s token is gone.** For mapped GitHub URLs,
   the helper warns and drives `gh auth login` for the mapped profile instead
   of falling through to a generic username/password prompt.
+- **Reflux learns safe personal-owner routes.** For unmapped GitHub URLs whose
+  owner matches a signed-in `gh` account, reflux writes the profile and owner
+  mapping automatically. For org owners, it returns `quit=1` with a concrete
+  `reflux map add` command.
 
 ## What reflux does NOT do
 

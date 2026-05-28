@@ -5,8 +5,9 @@ Steps are ordered by frequency. Start at the top.
 ## `git push` prompts for credentials when I expected reflux to handle it
 
 1. Run `reflux map resolve <the-remote-url>`.
-   - If it says "no mapping" — you don't have a route for that URL. Fix
-     with `reflux map add <prefix> <profile>`.
+   - If it says "no explicit mapping" — personal-owner GitHub repos can still
+     auto-learn when the owner matches a signed-in `gh` account. Org owners need
+     `reflux map add <prefix> <profile>`.
    - If it returns a profile — go to step 2.
 2. Run `reflux profile show <that-profile>`.
    - If `gh signed in` says no — run `reflux login <profile>`.
@@ -47,8 +48,8 @@ gh auth token --hostname github.com --user <theGhUser>
 ## `reflux install` says `git-credential-manager` was not registered
 
 That's fine — it means GCM wasn't your global credential helper before.
-Reflux still installs cleanly. Unmapped requests will fail to passthrough,
-but mapped ones work. Install GCM if you have any non-GitHub remotes.
+Reflux still installs cleanly. GitHub requests still use reflux. Install GCM
+if you have any non-GitHub remotes that need passthrough.
 
 ## `gh auth login` opens the wrong browser
 
@@ -67,15 +68,22 @@ identity works again until the next cap window.
 
 If you find yourself re-prompted multiple times in one cap window for the
 same identity, that's a bug — file an issue with `reflux doctor` output.
+Reflux owns all `github.com` credential requests once installed. If a personal
+repo owner matches a signed-in `gh` account, reflux auto-creates the profile
+and owner mapping. If the repo is owned by an org or another ambiguous owner,
+reflux fails loud with `quit=1`; add an explicit mapping such as
+`reflux map add https://github.com/<org>/ <profile>`.
 
 ## The helper exits 0 with no output
 
 That's intentional. Reflux exits 0 with no output when:
 - The host is not github.com (passthrough; the next helper handles it).
-- No mapping matches the URL (passthrough).
+- Git calls `store` for an unmapped github.com URL. gh owns token storage,
+  so reflux has nothing to persist.
 
-In both cases, git falls through to whichever helper comes next in
-your config (typically GCM). To force reflux to log what it decided:
+For github.com `get`, reflux does not passthrough to GCM just because a mapping
+is missing. It auto-learns safe personal-owner mappings or returns `quit=1`
+with an explicit mapping command. To force reflux to log what it decided:
 
 ```powershell
 $env:REFLUX_DEBUG = "1"
