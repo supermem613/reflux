@@ -19,8 +19,8 @@ import { RefluxError } from "./types.js";
 // ── Schema ───────────────────────────────────────────────────────────
 
 const ProfileSchema = z.object({
-  name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, {
-    message: "profile name must be [a-z0-9-], starting with a letter or digit",
+  name: z.string().regex(/^[a-z0-9][a-z0-9_-]*$/, {
+    message: "profile name must be [a-z0-9_-], starting with a letter or digit",
   }),
   ghUser: z.string().min(1, { message: "ghUser is required" }),
 });

@@ -52,12 +52,12 @@ describe("ConfigSchema", () => {
     assert.equal(result.success, false);
   });
 
-  it("accepts profile names with hyphens", () => {
+  it("accepts profile names with hyphens and underscores", () => {
     const result = ConfigSchema.parse({
       version: 1,
-      profiles: [{ name: "work-acme", ghUser: "work-login" }],
+      profiles: [{ name: "work_acme-prod", ghUser: "work-login" }],
     });
-    assert.equal(result.profiles[0].name, "work-acme");
+    assert.equal(result.profiles[0].name, "work_acme-prod");
     assert.equal(result.profiles[0].ghUser, "work-login");
   });
 });

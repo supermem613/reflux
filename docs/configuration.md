@@ -31,7 +31,7 @@ An ordered list. Each profile has:
 
 | Field | Type | Notes |
 |---|---|---|
-| `name` | `string` matching `/^[a-z0-9][a-z0-9-]*$/` | Friendly identifier used by reflux commands. Auto-learn converts unsupported login characters, for example `marcusm_microsoft` becomes profile `marcusm-microsoft`. |
+| `name` | `string` matching `/^[a-z0-9][a-z0-9_-]*$/` | Friendly identifier used by reflux commands. Auto-learn preserves supported login characters, so `marcusm_microsoft` can be both the profile name and `ghUser`. |
 | `ghUser` | `string` (non-empty) | The GitHub login as it appears in `gh auth status`. Reflux passes this verbatim to `gh auth token --user <ghUser>`. |
 
 Profile names must be unique. Adding a profile via `reflux profile add` is

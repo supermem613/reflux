@@ -363,7 +363,7 @@ describe("helper — auto-login recovery for missing token", () => {
     assert.deepEqual(config.mappings, [{ prefix: "https://github.com/supermem613/", profile: "supermem613" }]);
   });
 
-  it("auto-learns matching underscore gh users with a valid profile name", () => {
+  it("auto-learns matching underscore gh users without changing underscores", () => {
     if (!existsSync(HELPER_BIN)) {
       return;
     }
@@ -377,8 +377,8 @@ describe("helper — auto-login recovery for missing token", () => {
     assert.match(r.stdout, /username=marcusm_microsoft/);
     assert.deepEqual(gitStubCalls(), [], "unmapped github.com must not invoke GCM");
     const config = readConfig();
-    assert.deepEqual(config.profiles, [{ name: "marcusm-microsoft", ghUser: "marcusm_microsoft" }]);
-    assert.deepEqual(config.mappings, [{ prefix: "https://github.com/marcusm_microsoft/", profile: "marcusm-microsoft" }]);
+    assert.deepEqual(config.profiles, [{ name: "marcusm_microsoft", ghUser: "marcusm_microsoft" }]);
+    assert.deepEqual(config.mappings, [{ prefix: "https://github.com/marcusm_microsoft/", profile: "marcusm_microsoft" }]);
   });
 
   it("quits loudly for an unmapped org owner when multiple gh accounts exist", () => {

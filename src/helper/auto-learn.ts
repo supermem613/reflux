@@ -9,10 +9,10 @@ export type AutoLearnResult =
   | { ok: true; profile: string; ghUser: string; created: boolean }
   | { ok: false; reason: string; hints: string[] };
 
-const PROFILE_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const PROFILE_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 function profileNameForGhUser(ghUser: string, config: Config): string {
-  const base = ghUser.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "github";
+  const base = ghUser.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[-_]+|[-_]+$/g, "") || "github";
   if (PROFILE_NAME_PATTERN.test(base) && !config.profiles.some((p) => p.name === base)) {
     return base;
   }
