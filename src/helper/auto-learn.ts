@@ -76,8 +76,9 @@ export async function autoLearnGithubOwner(owner: string | undefined): Promise<A
       reason: `No signed-in gh account matches GitHub owner '${owner}'.`,
       hints: [
         `Signed-in gh accounts: ${known}.`,
-        `For org repos, add an explicit mapping: reflux map add https://github.com/${owner}/ <profile>`,
-        `For personal repos, sign in as ${owner} with gh and retry.`,
+        `To sign in as a different account: gh auth login --hostname github.com --git-protocol https --web`,
+        `For org repos, then add an explicit mapping: reflux map add https://github.com/${owner}/ <profile>`,
+        `For personal repos, sign in as ${owner} and retry.`,
       ],
     };
   }
