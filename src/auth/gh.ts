@@ -14,9 +14,13 @@ import { spawn, spawnSync } from "node:child_process";
 
 const GH_BIN = (): string => process.env.REFLUX_GH_BIN ?? "gh";
 
-// Windows blocks direct spawn of .cmd / .bat in current Node runtimes.
-// Production gh is "gh" or "gh.exe" — this only flips on for test shims.
-const needsShell = (bin: string): boolean => /\.(cmd|bat)$/i.test(bin);
+function resolveGhInvocation(args: string[]): { command: string; args: string[] } {
+  const bin = GH_BIN();
+  if (/\.(cmd|bat)$/i.test(bin)) {
+    return { command: "cmd.exe", args: ["/d", "/s", "/c", bin, ...args] };
+  }
+  return { command: bin, args };
+}
 
 export interface GhAccount {
   user: string;
@@ -31,7 +35,8 @@ export type GhTokenResult =
 /** True if `gh` is callable on PATH. */
 export function isInstalled(): boolean {
   try {
-    const r = spawnSync(GH_BIN(), ["--version"], { encoding: "utf-8", windowsHide: true, shell: needsShell(GH_BIN()) });
+    const invocation = resolveGhInvocation(["--version"]);
+    const r = spawnSync(invocation.command, invocation.args, { encoding: "utf-8", windowsHide: true });
     return r.status === 0;
   } catch {
     return false;
@@ -49,11 +54,8 @@ export function isInstalled(): boolean {
 export function getToken(ghUser: string, hostname = "github.com"): GhTokenResult {
   let r;
   try {
-    r = spawnSync(
-      GH_BIN(),
-      ["auth", "token", "--hostname", hostname, "--user", ghUser],
-      { encoding: "utf-8", windowsHide: true, shell: needsShell(GH_BIN()) },
-    );
+    const invocation = resolveGhInvocation(["auth", "token", "--hostname", hostname, "--user", ghUser]);
+    r = spawnSync(invocation.command, invocation.args, { encoding: "utf-8", windowsHide: true });
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
@@ -82,11 +84,8 @@ export function getToken(ghUser: string, hostname = "github.com"): GhTokenResult
 export function authStatus(hostname = "github.com"): GhAccount[] {
   let r;
   try {
-    r = spawnSync(
-      GH_BIN(),
-      ["auth", "status", "--hostname", hostname],
-      { encoding: "utf-8", windowsHide: true, shell: needsShell(GH_BIN()) },
-    );
+    const invocation = resolveGhInvocation(["auth", "status", "--hostname", hostname]);
+    r = spawnSync(invocation.command, invocation.args, { encoding: "utf-8", windowsHide: true });
   } catch {
     return [];
   }
@@ -143,11 +142,8 @@ export function loginInteractive(
 ): Promise<number> {
   return new Promise<number>((resolve) => {
     const stdout = opts.quietStdout ? "pipe" : "inherit";
-    const child = spawn(
-      GH_BIN(),
-      ["auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web", ...extraArgs],
-      { stdio: ["pipe", stdout, "inherit"], windowsHide: false, shell: needsShell(GH_BIN()) },
-    );
+    const invocation = resolveGhInvocation(["auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web", ...extraArgs]);
+    const child = spawn(invocation.command, invocation.args, { stdio: ["pipe", stdout, "inherit"], windowsHide: false });
     if (opts.quietStdout && child.stdout) {
       // Mirror gh's stdout into our stderr so the user sees the device code
       // and any progress lines without polluting git's protocol pipe.
@@ -171,11 +167,8 @@ export function loginInteractive(
 export function logout(ghUser: string, hostname = "github.com"): { ok: boolean; reason?: string } {
   let r;
   try {
-    r = spawnSync(
-      GH_BIN(),
-      ["auth", "logout", "--hostname", hostname, "--user", ghUser],
-      { encoding: "utf-8", windowsHide: true, shell: needsShell(GH_BIN()) },
-    );
+    const invocation = resolveGhInvocation(["auth", "logout", "--hostname", hostname, "--user", ghUser]);
+    r = spawnSync(invocation.command, invocation.args, { encoding: "utf-8", windowsHide: true });
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
@@ -192,7 +185,8 @@ export function logout(ghUser: string, hostname = "github.com"): { ok: boolean; 
 /** `gh --version` first line, or null if gh is missing. */
 export function version(): string | null {
   try {
-    const r = spawnSync(GH_BIN(), ["--version"], { encoding: "utf-8", windowsHide: true, shell: needsShell(GH_BIN()) });
+    const invocation = resolveGhInvocation(["--version"]);
+    const r = spawnSync(invocation.command, invocation.args, { encoding: "utf-8", windowsHide: true });
     if (r.status !== 0) {
       return null;
     }

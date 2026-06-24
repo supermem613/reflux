@@ -40,6 +40,13 @@ export interface PassthroughResult {
   exitCode: number;
 }
 
+function resolveGitInvocation(gitBin: string, args: string[]): { command: string; args: string[] } {
+  if (/\.(cmd|bat)$/i.test(gitBin)) {
+    return { command: "cmd.exe", args: ["/d", "/s", "/c", gitBin, ...args] };
+  }
+  return { command: gitBin, args };
+}
+
 export async function passthroughToGcm(
   action: CredentialAction,
   options: PassthroughOptions = {},
@@ -51,14 +58,10 @@ export async function passthroughToGcm(
   //   3. Plain "git" — found via PATH; on Windows this is git.exe and
   //      `git credential-manager` resolves GCM via libexec/git-core.
   const gitBin = process.env.REFLUX_GIT_BIN ?? options.gitBin ?? "git";
-  // Current Node runtimes refuse to spawn .cmd/.bat directly without shell:true
-  // (CVE-2024-27980). Production `git` is git.exe so this is a no-op there;
-  // it only kicks in for test stubs.
-  const useShell = /\.(cmd|bat)$/i.test(gitBin);
-  const child = spawn(gitBin, ["credential-manager", action], {
+  const invocation = resolveGitInvocation(gitBin, ["credential-manager", action]);
+  const child = spawn(invocation.command, invocation.args, {
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
-    shell: useShell,
   });
 
   const stdoutSink = options.stdout ?? process.stdout;
