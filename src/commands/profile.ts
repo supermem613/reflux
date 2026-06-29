@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { isInstalled, isAuthenticated, authStatus } from "../auth/gh.js";
+import { isInstalled, isAuthenticated, authStatus, switchUser } from "../auth/gh.js";
 import { addProfile, listProfiles, removeProfile } from "../core/profiles.js";
 import { Profile, RefluxError } from "../core/types.js";
 
@@ -62,4 +62,25 @@ export function profileShowCommand(name: string): void {
   } else {
     console.log(`  gh signed in:   ${chalk.yellow("unknown — gh CLI not found on PATH")}`);
   }
+}
+
+export function profileSwitchCommand(name: string): void {
+  const profile = listProfiles().find((p) => p.name === name);
+  if (!profile) {
+    throw new RefluxError(`Profile '${name}' does not exist.`);
+  }
+  if (!isInstalled()) {
+    throw new RefluxError("gh CLI not found on PATH.");
+  }
+  if (!isAuthenticated(profile.ghUser)) {
+    throw new RefluxError(
+      `gh is not signed in as '${profile.ghUser}'. Run \`reflux login ${name}\` first.`,
+    );
+  }
+
+  const result = switchUser(profile.ghUser);
+  if (!result.ok) {
+    throw new RefluxError(`gh auth switch failed: ${result.reason ?? "unknown error"}`);
+  }
+  console.log(chalk.green("✓") + ` Switched active gh account to ${chalk.cyan(profile.ghUser)} for profile ${chalk.cyan(name)}.`);
 }

@@ -19,6 +19,7 @@ import {
   profileListCommand,
   profileRemoveCommand,
   profileShowCommand,
+  profileSwitchCommand,
 } from "./commands/profile.js";
 import { statusCommand } from "./commands/status.js";
 import { updateCommand } from "./commands/update.js";
@@ -53,6 +54,12 @@ program
   .description("Sign the profile's gh user out (delegates to `gh auth logout`)")
   .argument("<profile>", "Profile name to log out")
   .action(logoutCommand);
+
+program
+  .command("switch")
+  .description("Switch the active gh account to a profile's gh user")
+  .argument("<profile>", "Profile name to make active in gh")
+  .action(profileSwitchCommand);
 
 const map = program
   .command("map")
@@ -109,6 +116,12 @@ profile
   .description("Show details for a single profile")
   .argument("<name>", "Profile name")
   .action(profileShowCommand);
+
+profile
+  .command("switch")
+  .description("Switch the active gh account to this profile's gh user")
+  .argument("<name>", "Profile name")
+  .action(profileSwitchCommand);
 
 program
   .command("status")

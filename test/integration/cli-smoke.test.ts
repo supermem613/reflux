@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, existsSync, writeFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, writeFileSync, chmodSync, readFileSync } from "node:fs";
 import { tmpdir, platform } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,10 @@ if (args[0] === "auth" && args[1] === "status") {
   for (const account of ${JSON.stringify(accounts)}) {
     process.stderr.write("- account " + account + " (active)\\n");
   }
+  process.exit(0);
+}
+if (args[0] === "auth" && args[1] === "switch") {
+  require("fs").appendFileSync(${JSON.stringify(join(tmp, "gh-switch.log"))}, args.join(" ") + "\\n");
   process.exit(0);
 }
 process.exit(1);
@@ -81,7 +85,7 @@ describe("CLI smoke tests", () => {
   it("`reflux --help` lists registered commands", () => {
     const r = reflux("--help");
     assert.equal(r.status, 0);
-    for (const cmd of ["doctor", "install", "login", "logout", "map", "profile", "status", "uninstall", "update"]) {
+    for (const cmd of ["doctor", "install", "login", "logout", "map", "profile", "status", "switch", "uninstall", "update"]) {
       assert.match(r.stdout, new RegExp(`\\b${cmd}\\b`), `expected '${cmd}' in help output`);
     }
     assert.match(r.stdout, /auto-learn ready/);
@@ -118,6 +122,27 @@ describe("CLI smoke tests", () => {
     assert.equal(r.status, 0);
     assert.match(r.stdout, /gh user/);
     assert.match(r.stdout, /work-login/);
+  });
+
+  it("`profile switch` switches gh to the profile's gh user", () => {
+    env.REFLUX_GH_BIN = installGhStub(["work-login"]);
+    reflux("profile", "add", "work", "--gh-user", "work-login");
+
+    const r = reflux("profile", "switch", "work");
+
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Switched active gh account/);
+    assert.equal(readFileSync(join(tmp, "gh-switch.log"), "utf-8"), "auth switch --hostname github.com --user work-login\n");
+  });
+
+  it("`switch` aliases `profile switch`", () => {
+    env.REFLUX_GH_BIN = installGhStub(["work-login"]);
+    reflux("profile", "add", "work", "--gh-user", "work-login");
+
+    const r = reflux("switch", "work");
+
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(readFileSync(join(tmp, "gh-switch.log"), "utf-8"), "auth switch --hostname github.com --user work-login\n");
   });
 
   it("`map add` rejects mapping to a missing profile", () => {

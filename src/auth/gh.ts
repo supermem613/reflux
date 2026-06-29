@@ -32,6 +32,11 @@ export type GhTokenResult =
   | { ok: true; token: string }
   | { ok: false; reason: string };
 
+export interface GhCommandResult {
+  ok: boolean;
+  reason?: string;
+}
+
 /** True if `gh` is callable on PATH. */
 export function isInstalled(): boolean {
   try {
@@ -161,10 +166,31 @@ export function loginInteractive(
 }
 
 /**
+ * Switch gh's active account for commands that rely on gh's default account.
+ */
+export function switchUser(ghUser: string, hostname = "github.com"): GhCommandResult {
+  let r;
+  try {
+    const invocation = resolveGhInvocation(["auth", "switch", "--hostname", hostname, "--user", ghUser]);
+    r = spawnSync(invocation.command, invocation.args, { encoding: "utf-8", windowsHide: true });
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+  if (r.error) {
+    return { ok: false, reason: r.error.message };
+  }
+  if (r.status !== 0) {
+    const stderr = (r.stderr ?? "").trim();
+    return { ok: false, reason: stderr || `gh auth switch exited ${r.status}` };
+  }
+  return { ok: true };
+}
+
+/**
  * Log a specific gh account out. Best-effort; returns the structured result
  * so callers can decide whether a missing account should be a hard error.
  */
-export function logout(ghUser: string, hostname = "github.com"): { ok: boolean; reason?: string } {
+export function logout(ghUser: string, hostname = "github.com"): GhCommandResult {
   let r;
   try {
     const invocation = resolveGhInvocation(["auth", "logout", "--hostname", hostname, "--user", ghUser]);

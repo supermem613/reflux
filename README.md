@@ -36,9 +36,11 @@ per-URL router on top of `gh`'s multi-account auth.
    profile name to a GitHub login for org owners or explicit routes.
 3. **`reflux login <name>`** — delegates to `gh auth login` if the profile's
    gh user isn't signed in yet. This is the only step that opens a browser.
-4. **`reflux map add <url-prefix> <name>`** — route URLs starting with the
+4. **`reflux switch <name>`** — makes that profile's gh user the active `gh`
+   account for commands that use gh's default account.
+5. **`reflux map add <url-prefix> <name>`** — route URLs starting with the
    prefix to the profile. Longest-prefix wins. Org owners should be explicit.
-5. **`reflux install`** — register `git-credential-reflux` as a helper for
+6. **`reflux install`** — register `git-credential-reflux` as a helper for
    `https://github.com` in your global `.gitconfig`, before the existing
    helper chain.
 
@@ -113,12 +115,14 @@ git push work main     # → routed to work     → gh user <work-login>
 | `reflux profile list` | List profiles and whether each gh user is signed in |
 | `reflux profile remove <name>` | Remove a profile (does not touch gh) |
 | `reflux profile show <name>` | Show details for a single profile |
+| `reflux profile switch <name>` | Switch the active gh account to the profile's gh user |
 | `reflux map add <prefix> <profile>` | Route URLs starting with `<prefix>` to `<profile>` |
 | `reflux map list` | List mappings, sorted by resolution priority |
 | `reflux map remove <prefix>` | Remove a mapping |
 | `reflux map resolve <url>` | Show the explicit mapping for a URL, if one exists |
 | `reflux login <profile>` | Delegate to `gh auth login` for the profile's gh user |
 | `reflux logout <profile>` | Delegate to `gh auth logout` for the profile's gh user |
+| `reflux switch <profile>` | Short alias for `reflux profile switch <profile>` |
 | `reflux status` | Show gh state, profiles, mappings |
 | `reflux doctor` | Diagnose installation and routing config problems |
 | `reflux install` | Register with git config |

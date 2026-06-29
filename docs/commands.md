@@ -29,6 +29,12 @@ currently signed in, `○` otherwise.
 
 Show details for a single profile (gh user, sign-in state).
 
+### `reflux profile switch <name>`
+
+Switch the active `gh` account to the profile's gh user. Delegates to
+`gh auth switch --hostname github.com --user <ghUser>` after confirming the
+profile exists and that `gh auth status` reports the account.
+
 ### `reflux profile remove <name>`
 
 Remove a profile and any mappings that referenced it. Does **not** call
@@ -88,6 +94,11 @@ gh user; warns if not (you may have signed in as a different account).
 
 Sign the profile's gh user out. Delegates to `gh auth logout --hostname
 github.com --user <ghUser>`. Other gh accounts are unaffected.
+
+## `reflux switch <profile>`
+
+Short alias for `reflux profile switch <profile>`. Use it before running
+commands that read gh's active account instead of passing `--user`.
 
 ## `reflux status`
 
