@@ -26,6 +26,7 @@ export interface GhAccount {
   user: string;
   hostname: string;
   active: boolean;
+  scopes: string[];
 }
 
 export type GhTokenResult =
@@ -36,6 +37,8 @@ export interface GhCommandResult {
   ok: boolean;
   reason?: string;
 }
+
+const REQUIRED_LOGIN_SCOPES = ["workflow"];
 
 /** True if `gh` is callable on PATH. */
 export function isInstalled(): boolean {
@@ -104,12 +107,17 @@ export function authStatus(hostname = "github.com"): GhAccount[] {
     const line = raw.trim();
     const m = line.match(/account\s+([A-Za-z0-9][A-Za-z0-9_-]*)/);
     if (m) {
-      current = { user: m[1], hostname, active: false };
+      current = { user: m[1], hostname, active: false, scopes: [] };
       accounts.push(current);
       continue;
     }
     if (current && /^- Active account:\s*true/i.test(line)) {
       current.active = true;
+      continue;
+    }
+    const scopes = line.match(/^- Token scopes:\s*(.+)$/i);
+    if (current && scopes) {
+      current.scopes = [...scopes[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
     }
   }
   return accounts;
@@ -118,6 +126,11 @@ export function authStatus(hostname = "github.com"): GhAccount[] {
 /** True if the given gh user appears in `gh auth status`. */
 export function isAuthenticated(ghUser: string, hostname = "github.com"): boolean {
   return authStatus(hostname).some((a) => a.user === ghUser);
+}
+
+export function hasScopes(ghUser: string, scopes: readonly string[], hostname = "github.com"): boolean {
+  const account = authStatus(hostname).find((a) => a.user === ghUser);
+  return account !== undefined && scopes.every((scope) => account.scopes.includes(scope));
 }
 
 /**
@@ -147,13 +160,25 @@ export function loginInteractive(
 ): Promise<number> {
   return new Promise<number>((resolve) => {
     const stdout = opts.quietStdout ? "pipe" : "inherit";
-    const invocation = resolveGhInvocation(["auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web", ...extraArgs]);
+    const invocation = resolveGhInvocation([
+      "auth",
+      "login",
+      "--hostname",
+      "github.com",
+      "--git-protocol",
+      "https",
+      "--web",
+      "--scopes",
+      REQUIRED_LOGIN_SCOPES.join(","),
+      ...extraArgs,
+    ]);
     const child = spawn(invocation.command, invocation.args, { stdio: ["pipe", stdout, "inherit"], windowsHide: false });
     if (opts.quietStdout && child.stdout) {
       // Mirror gh's stdout into our stderr so the user sees the device code
       // and any progress lines without polluting git's protocol pipe.
       child.stdout.on("data", (chunk: Buffer) => process.stderr.write(chunk));
     }
+
     // Decline the "Authenticate Git with your GitHub credentials?" prompt.
     // Writing more than one line is harmless if gh asks fewer questions.
     if (child.stdin) {
@@ -163,6 +188,52 @@ export function loginInteractive(
     child.on("exit", (code) => resolve(code ?? 1));
     child.on("error", () => resolve(1));
   });
+}
+
+function runInteractiveGh(args: string[], opts: LoginInteractiveOptions = {}): Promise<number> {
+  return new Promise<number>((resolve) => {
+    const stdout = opts.quietStdout ? "pipe" : "inherit";
+    const invocation = resolveGhInvocation(args);
+    const child = spawn(invocation.command, invocation.args, { stdio: ["ignore", stdout, "inherit"], windowsHide: false });
+    if (opts.quietStdout && child.stdout) {
+      child.stdout.on("data", (chunk: Buffer) => process.stderr.write(chunk));
+    }
+    child.on("exit", (code) => resolve(code ?? 1));
+    child.on("error", () => resolve(1));
+  });
+}
+
+export async function refreshScopesForUser(
+  ghUser: string,
+  scopes: readonly string[] = REQUIRED_LOGIN_SCOPES,
+  opts: LoginInteractiveOptions = {},
+  hostname = "github.com",
+): Promise<GhCommandResult> {
+  const accounts = authStatus(hostname);
+  const target = accounts.find((account) => account.user === ghUser);
+  if (!target) {
+    return { ok: false, reason: `gh has no session for ${ghUser}` };
+  }
+  if (scopes.every((scope) => target.scopes.includes(scope))) {
+    return { ok: true };
+  }
+
+  const originalActive = accounts.find((account) => account.active);
+  if (!target.active) {
+    const switched = switchUser(ghUser, hostname);
+    if (!switched.ok) {
+      return switched;
+    }
+  }
+
+  const refreshExit = await runInteractiveGh(["auth", "refresh", "--hostname", hostname, "--scopes", scopes.join(",")], opts);
+  const restore = originalActive && originalActive.user !== ghUser
+    ? switchUser(originalActive.user, hostname)
+    : { ok: true };
+  if (refreshExit !== 0) {
+    return { ok: false, reason: `gh auth refresh exited ${refreshExit}` };
+  }
+  return restore.ok ? { ok: true } : restore;
 }
 
 /**

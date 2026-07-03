@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, chmodSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir, platform } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,12 +8,17 @@ import {
   getToken,
   isAuthenticated,
   isInstalled,
+  loginInteractive,
   logout,
+  refreshScopesForUser,
   version,
 } from "../../src/auth/gh.js";
+import { loginCommand } from "../../src/commands/login.js";
 
 let tmp: string;
 let originalGhBin: string | undefined;
+let originalHome: string | undefined;
+let originalUserProfile: string | undefined;
 
 /**
  * Write a stub `gh` binary at `tmp/gh.cmd` (Windows) / `tmp/gh` (POSIX) and
@@ -37,6 +42,10 @@ function installStub(script: string): string {
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), "reflux-gh-test-"));
   originalGhBin = process.env.REFLUX_GH_BIN;
+  originalHome = process.env.HOME;
+  originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = tmp;
+  process.env.USERPROFILE = tmp;
 });
 
 afterEach(() => {
@@ -44,6 +53,16 @@ afterEach(() => {
     delete process.env.REFLUX_GH_BIN;
   } else {
     process.env.REFLUX_GH_BIN = originalGhBin;
+  }
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
+  if (originalUserProfile === undefined) {
+    delete process.env.USERPROFILE;
+  } else {
+    process.env.USERPROFILE = originalUserProfile;
   }
   rmSync(tmp, { recursive: true, force: true });
 });
@@ -112,8 +131,10 @@ describe("gh wrapper — authStatus", () => {
         "github.com",
         "  \\u2713 Logged in to github.com account personal-login (keyring)",
         "  - Active account: true",
+        "  - Token scopes: 'gist', 'read:org', 'repo'",
         "  \\u2713 Logged in to github.com account work-login (keyring)",
         "  - Active account: false",
+        "  - Token scopes: 'gist', 'read:org', 'repo', 'workflow'",
       ].join("\\n") + "\\n");
       process.exit(0);
     `);
@@ -124,6 +145,8 @@ describe("gh wrapper — authStatus", () => {
     assert.ok(personal && work);
     assert.equal(personal!.active, true);
     assert.equal(work!.active, false);
+    assert.deepEqual(personal!.scopes, ["gist", "read:org", "repo"]);
+    assert.deepEqual(work!.scopes, ["gist", "read:org", "repo", "workflow"]);
   });
 
   it("returns [] when gh is missing", () => {
@@ -138,6 +161,72 @@ describe("gh wrapper — authStatus", () => {
     `);
     assert.equal(isAuthenticated("personal-login"), true);
     assert.equal(isAuthenticated("nobody"), false);
+  });
+});
+
+describe("gh wrapper — login and scope refresh", () => {
+  it("requests workflow scope during interactive login", async () => {
+    const calls: string[] = [];
+    process.env.REFLUX_GH_BIN = installStub(`
+      const fs = require("fs");
+      fs.appendFileSync(${JSON.stringify(join(tmp, "calls.log"))}, JSON.stringify(process.argv.slice(2)) + "\\n");
+      process.stdin.on("data", () => {});
+      process.stdin.on("end", () => process.exit(0));
+    `);
+
+    const code = await loginInteractive([], { quietStdout: true });
+
+    assert.equal(code, 0);
+    calls.push(...readFileSync(join(tmp, "calls.log"), "utf-8").trim().split(/\r?\n/));
+    assert.deepEqual(JSON.parse(calls[0]), [
+      "auth",
+      "login",
+      "--hostname",
+      "github.com",
+      "--git-protocol",
+      "https",
+      "--web",
+      "--scopes",
+      "workflow",
+    ]);
+  });
+
+  it("refreshes workflow scope for the requested gh user and restores the previous active user", async () => {
+    process.env.REFLUX_GH_BIN = installStub(`
+      const fs = require("fs");
+      const args = process.argv.slice(2);
+      fs.appendFileSync(${JSON.stringify(join(tmp, "calls.log"))}, JSON.stringify(args) + "\\n");
+      if (args[0] === "auth" && args[1] === "status") {
+        process.stderr.write([
+          "github.com",
+          "  \\u2713 Logged in to github.com account personal-login (keyring)",
+          "  - Active account: true",
+          "  - Token scopes: 'gist', 'read:org', 'repo'",
+          "  \\u2713 Logged in to github.com account work-login (keyring)",
+          "  - Active account: false",
+          "  - Token scopes: 'gist', 'read:org', 'repo'",
+        ].join("\\n") + "\\n");
+        process.exit(0);
+      }
+      if (args[0] === "auth" && (args[1] === "switch" || args[1] === "refresh")) {
+        process.exit(0);
+      }
+      process.exit(1);
+    `);
+
+    const result = await refreshScopesForUser("work-login", ["workflow"], { quietStdout: true });
+
+    assert.equal(result.ok, true);
+    const calls = readFileSync(join(tmp, "calls.log"), "utf-8")
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line) as string[]);
+    assert.deepEqual(calls, [
+      ["auth", "status", "--hostname", "github.com"],
+      ["auth", "switch", "--hostname", "github.com", "--user", "work-login"],
+      ["auth", "refresh", "--hostname", "github.com", "--scopes", "workflow"],
+      ["auth", "switch", "--hostname", "github.com", "--user", "personal-login"],
+    ]);
   });
 });
 
@@ -158,5 +247,56 @@ describe("gh wrapper — logout", () => {
     if (!r.ok) {
       assert.match(r.reason ?? "", /not logged in/);
     }
+  });
+});
+
+describe("reflux login — workflow scope", () => {
+  it("refreshes workflow scope instead of no-oping when the gh user is already signed in", async () => {
+    const callsFile = join(tmp, "calls.log");
+    process.env.REFLUX_GH_BIN = installStub(`
+      const fs = require("fs");
+      const args = process.argv.slice(2);
+      fs.appendFileSync(${JSON.stringify(callsFile)}, JSON.stringify(args) + "\\n");
+      if (args[0] === "--version") {
+        process.stdout.write("gh version 2.91.0\\n");
+        process.exit(0);
+      }
+      if (args[0] === "auth" && args[1] === "status") {
+        process.stderr.write([
+          "github.com",
+          "  \\u2713 Logged in to github.com account personal-login (keyring)",
+          "  - Active account: true",
+          "  - Token scopes: 'gist', 'read:org', 'repo'",
+        ].join("\\n") + "\\n");
+        process.exit(0);
+      }
+      if (args[0] === "auth" && args[1] === "refresh") {
+        process.exit(0);
+      }
+      process.exit(1);
+    `);
+    mkdirSync(join(tmp, ".reflux"), { recursive: true });
+    writeFileSync(
+      join(tmp, ".reflux", "config.json"),
+      JSON.stringify({
+        version: 1,
+        profiles: [{ name: "personal", ghUser: "personal-login" }],
+        mappings: [],
+      }) + "\n",
+    );
+
+    await loginCommand("personal");
+
+    const calls = readFileSync(callsFile, "utf-8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as string[]);
+    assert.deepEqual(calls, [
+      ["--version"],
+      ["auth", "status", "--hostname", "github.com"],
+      ["auth", "status", "--hostname", "github.com"],
+      ["auth", "status", "--hostname", "github.com"],
+      ["auth", "refresh", "--hostname", "github.com", "--scopes", "workflow"],
+    ]);
   });
 });

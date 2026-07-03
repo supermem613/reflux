@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { isAuthenticated, isInstalled, loginInteractive } from "../auth/gh.js";
+import { hasScopes, isAuthenticated, isInstalled, loginInteractive, refreshScopesForUser } from "../auth/gh.js";
 import { loadConfig } from "../core/config.js";
 import { getProfile } from "../core/profiles.js";
 import { RefluxError } from "../core/types.js";
@@ -27,8 +27,15 @@ export async function loginCommand(profileName: string): Promise<void> {
   }
 
   if (isAuthenticated(profile.ghUser)) {
+    if (!hasScopes(profile.ghUser, ["workflow"])) {
+      console.log(chalk.dim(`Refreshing \`gh\` scopes for profile ${chalk.cyan(profileName)} (gh user ${chalk.cyan(profile.ghUser)}).`));
+      const refreshed = await refreshScopesForUser(profile.ghUser, ["workflow"]);
+      if (!refreshed.ok) {
+        throw new RefluxError(refreshed.reason ?? "gh auth refresh failed.");
+      }
+    }
     console.log(chalk.green("✓") + ` gh already signed in as ${chalk.cyan(profile.ghUser)}.`);
-    console.log(chalk.dim("  Nothing to do. (Use `gh auth logout --user " + profile.ghUser + "` to force a fresh login.)"));
+    console.log(chalk.dim("  Token has the required workflow scope."));
     return;
   }
 

@@ -22,7 +22,7 @@ gh ≥ 2.40. Older versions will fail in the helper hot path.
 For each GitHub identity you have:
 
 ```powershell
-gh auth login --hostname github.com
+gh auth login --hostname github.com --scopes workflow
 # Choose: GitHub.com → HTTPS → Login with a web browser
 # A browser opens; sign in with the matching account.
 ```
@@ -42,6 +42,12 @@ gh auth status
 The "Active account" line is the one `gh` uses by default for `gh repo
 clone`, `gh issue create`, etc. Reflux ignores active-vs-inactive — it always
 asks for the specific account a profile is bound to.
+
+Reflux requests the `workflow` scope when it drives `gh auth login`. GitHub
+requires that scope when a push creates or updates `.github/workflows/*`.
+For an already-signed-in account, `reflux login <profile>` refreshes that
+profile's `gh` token with `workflow` and then restores the previously active
+`gh` account.
 
 ## Binding reflux profiles to `gh` users
 
