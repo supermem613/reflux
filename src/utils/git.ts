@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { sanitizedGitChildEnv } from "./child-env.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -13,6 +14,7 @@ export async function git(args: string[], cwd: string): Promise<GitResult> {
   const result = await execFileAsync("git", args, {
     cwd,
     maxBuffer: 10 * 1024 * 1024,
+    env: sanitizedGitChildEnv(),
   });
   return { stdout: result.stdout, stderr: result.stderr };
 }

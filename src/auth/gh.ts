@@ -11,6 +11,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
+import { sanitizedGitChildEnv } from "../utils/child-env.js";
 
 const GH_BIN = (): string => process.env.REFLUX_GH_BIN ?? "gh";
 
@@ -20,6 +21,21 @@ function resolveGhInvocation(args: string[]): { command: string; args: string[] 
     return { command: "cmd.exe", args: ["/d", "/s", "/c", bin, ...args] };
   }
   return { command: bin, args };
+}
+
+/**
+ * Run `gh` synchronously with git's injected command-line config stripped from
+ * the child environment. Every reflux->gh call goes through here so an injected
+ * credential.helper can never influence gh's internal git operations while
+ * git-credential-reflux is resolving a token.
+ */
+function ghSpawnSync(args: string[]) {
+  const invocation = resolveGhInvocation(args);
+  return spawnSync(invocation.command, invocation.args, {
+    encoding: "utf-8",
+    windowsHide: true,
+    env: sanitizedGitChildEnv(),
+  });
 }
 
 export interface GhAccount {
@@ -73,8 +89,7 @@ export function findDuplicateLogins(accounts: readonly GhAccount[]): DuplicateLo
 /** True if `gh` is callable on PATH. */
 export function isInstalled(): boolean {
   try {
-    const invocation = resolveGhInvocation(["--version"]);
-    const r = spawnSync(invocation.command, invocation.args, { encoding: "utf-8", windowsHide: true });
+    const r = ghSpawnSync(["--version"]);
     return r.status === 0;
   } catch {
     return false;
@@ -92,8 +107,7 @@ export function isInstalled(): boolean {
 export function getToken(ghUser: string, hostname = "github.com"): GhTokenResult {
   let r;
   try {
-    const invocation = resolveGhInvocation(["auth", "token", "--hostname", hostname, "--user", ghUser]);
-    r = spawnSync(invocation.command, invocation.args, { encoding: "utf-8", windowsHide: true });
+    r = ghSpawnSync(["auth", "token", "--hostname", hostname, "--user", ghUser]);
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
@@ -122,8 +136,7 @@ export function getToken(ghUser: string, hostname = "github.com"): GhTokenResult
 export function authStatus(hostname = "github.com"): GhAccount[] {
   let r;
   try {
-    const invocation = resolveGhInvocation(["auth", "status", "--hostname", hostname]);
-    r = spawnSync(invocation.command, invocation.args, { encoding: "utf-8", windowsHide: true });
+    r = ghSpawnSync(["auth", "status", "--hostname", hostname]);
   } catch {
     return [];
   }
@@ -202,7 +215,7 @@ export function loginInteractive(
       REQUIRED_LOGIN_SCOPES.join(","),
       ...extraArgs,
     ]);
-    const child = spawn(invocation.command, invocation.args, { stdio: ["pipe", stdout, "inherit"], windowsHide: false });
+    const child = spawn(invocation.command, invocation.args, { stdio: ["pipe", stdout, "inherit"], windowsHide: false, env: sanitizedGitChildEnv() });
     if (opts.quietStdout && child.stdout) {
       // Mirror gh's stdout into our stderr so the user sees the device code
       // and any progress lines without polluting git's protocol pipe.
@@ -224,7 +237,7 @@ function runInteractiveGh(args: string[], opts: LoginInteractiveOptions = {}): P
   return new Promise<number>((resolve) => {
     const stdout = opts.quietStdout ? "pipe" : "inherit";
     const invocation = resolveGhInvocation(args);
-    const child = spawn(invocation.command, invocation.args, { stdio: ["ignore", stdout, "inherit"], windowsHide: false });
+    const child = spawn(invocation.command, invocation.args, { stdio: ["ignore", stdout, "inherit"], windowsHide: false, env: sanitizedGitChildEnv() });
     if (opts.quietStdout && child.stdout) {
       child.stdout.on("data", (chunk: Buffer) => process.stderr.write(chunk));
     }
@@ -272,8 +285,7 @@ export async function refreshScopesForUser(
 export function switchUser(ghUser: string, hostname = "github.com"): GhCommandResult {
   let r;
   try {
-    const invocation = resolveGhInvocation(["auth", "switch", "--hostname", hostname, "--user", ghUser]);
-    r = spawnSync(invocation.command, invocation.args, { encoding: "utf-8", windowsHide: true });
+    r = ghSpawnSync(["auth", "switch", "--hostname", hostname, "--user", ghUser]);
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
@@ -294,8 +306,7 @@ export function switchUser(ghUser: string, hostname = "github.com"): GhCommandRe
 export function logout(ghUser: string, hostname = "github.com"): GhCommandResult {
   let r;
   try {
-    const invocation = resolveGhInvocation(["auth", "logout", "--hostname", hostname, "--user", ghUser]);
-    r = spawnSync(invocation.command, invocation.args, { encoding: "utf-8", windowsHide: true });
+    r = ghSpawnSync(["auth", "logout", "--hostname", hostname, "--user", ghUser]);
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
@@ -312,8 +323,7 @@ export function logout(ghUser: string, hostname = "github.com"): GhCommandResult
 /** `gh --version` first line, or null if gh is missing. */
 export function version(): string | null {
   try {
-    const invocation = resolveGhInvocation(["--version"]);
-    const r = spawnSync(invocation.command, invocation.args, { encoding: "utf-8", windowsHide: true });
+    const r = ghSpawnSync(["--version"]);
     if (r.status !== 0) {
       return null;
     }

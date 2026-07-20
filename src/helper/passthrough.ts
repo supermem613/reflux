@@ -22,6 +22,7 @@
 import { spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import { CredentialAction } from "./protocol.js";
+import { sanitizedGitChildEnv } from "../utils/child-env.js";
 
 export interface PassthroughOptions {
   /** Stdin to pipe into the child. Default: process.stdin. */
@@ -62,6 +63,7 @@ export async function passthroughToGcm(
   const child = spawn(invocation.command, invocation.args, {
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
+    env: sanitizedGitChildEnv(),
   });
 
   const stdoutSink = options.stdout ?? process.stdout;
