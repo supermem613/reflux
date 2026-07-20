@@ -45,6 +45,34 @@ gh auth token --hostname github.com --user <theGhUser>
 - If `gh auth token` itself fails, the keyring entry is gone or corrupt.
   Run `gh auth login --hostname github.com` and pick the missing account.
 
+## `git fetch` says "Repository not found" but reflux works when isolated
+
+Symptom: `git fetch` in a repo returns `remote: Repository not found` (a
+GitHub 404 for a private repo you can access), yet
+`git -c credential.helper= -c credential.helper=reflux ls-remote origin`
+succeeds. A soda/`uatu` write to the same repo fails with `REPO_NOT_READY`.
+
+Cause: the repository has a **repo-local** `credential.helper` that resets the
+helper chain and re-adds another helper (commonly
+`credential.helper=''` then `credential.helper=!gh auth git-credential`).
+Git accumulates helpers across system, global, then local config in order,
+and an empty-string value clears everything before it. Because local config
+is read last, that local reset drops reflux from the chain, so the other
+helper answers with a token that lacks access. reflux cannot override an
+explicit repo-local helper — git's precedence gives the later local reset the
+final say.
+
+Fix:
+
+```powershell
+reflux doctor            # the `git helper shadow (repo-local)` check names the culprit
+git config --local --get-all credential.helper   # inspect the override
+git config --local --unset-all credential.helper # remove it, or re-point at reflux
+```
+
+After removing the local override, github.com resolution falls back to the
+global chain where reflux runs first.
+
 ## `reflux install` says `git-credential-manager` was not registered
 
 That's fine — it means GCM wasn't your global credential helper before.

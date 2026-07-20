@@ -118,9 +118,24 @@ any check fails. Run this after a fresh install or when something feels off.
 Checks:
 - `gh CLI` is on PATH and reports a version.
 - `git-credential-manager` is on PATH (used for passthrough).
+- `git helper registration`: reflux is registered for `https://github.com`
+  with an empty-string reset in front of it (global scope).
+- `git helper shadow (repo-local)`: no repo-local `credential.helper` in the
+  current repository overrides reflux for `github.com`. A repo-local helper
+  that resets the chain and re-adds another helper (for example
+  `!gh auth git-credential`) wins by git's precedence rules and shadows
+  reflux, so a token without repo access can answer instead. reflux cannot
+  override an explicit repo-local helper; the fix is to remove the local
+  override with `git config --local --unset-all credential.helper` or
+  re-point it at reflux.
 - `~/.reflux/config.json` parses cleanly.
 - At least one `gh` account is signed in so reflux can auto-learn personal
   owner mappings.
+- `gh duplicate logins`: no gh login is signed in more than once. Two live
+  sessions for the same login make `gh auth token --user <login>` ambiguous,
+  so reflux may emit a token for the wrong session and one of them can lack
+  repo access. Log the stale duplicate out with
+  `gh auth logout --hostname github.com --user <login>`.
 - Profiles and mappings are listed. Empty profiles and mappings are allowed:
   personal-owner repos auto-learn, while org repos require explicit mappings.
 - Each profile's gh user appears in `gh auth status`.
