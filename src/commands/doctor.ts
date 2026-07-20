@@ -157,20 +157,35 @@ function checkProfile(name: string, ghUser: string, accounts: { user: string }[]
 }
 
 export function checkLocalHelperShadow(scoped: readonly ScopedHelper[]): CheckResult {
-  const name = "git helper shadow (repo-local)";
   const globalOnly = scoped.filter((s) => s.scope === "system" || s.scope === "global");
   const globalShadowed = detectRefluxShadow(globalOnly).shadowed;
   const merged = detectRefluxShadow(scoped);
-  // Only fire for a repo-local/worktree shadow. A shadow already present in the
-  // global chain is the install-registration problem that `git helper
-  // registration` owns; flagging it here too would be redundant noise.
+  // git's `--show-scope` tags a `-c` / GIT_CONFIG_PARAMETERS entry as `command`.
+  // That shadow lives in the launching environment, not a repo config file, so
+  // it needs a different origin label and a different remediation than a file
+  // shadow. A repo-local unset cannot clear a command-line injected helper.
+  const commandInjected = merged.culpritScope === "command";
+  const name = commandInjected
+    ? "git helper shadow (command line)"
+    : "git helper shadow (repo-local)";
+  // Only fire for a repo-local/worktree/command-line shadow. A shadow already
+  // present in the global chain is the install-registration problem that `git
+  // helper registration` owns; flagging it here too would be redundant noise.
   if (globalShadowed || !merged.shadowed) {
     const detail = merged.effective.length > 0
-      ? `no repo-local helper shadows reflux; effective github.com helper = [${merged.effective.map((v) => JSON.stringify(v)).join(", ")}]`
+      ? `no local or command-line helper shadows reflux; effective github.com helper = [${merged.effective.map((v) => JSON.stringify(v)).join(", ")}]`
       : "no repo-local credential.helper override in this repository";
     return { name, ok: true, detail };
   }
   const winner = merged.winner ?? "another helper";
+  if (commandInjected) {
+    return {
+      name,
+      ok: false,
+      detail: `a command-line credential.helper (${JSON.stringify(winner)}) shadows reflux for github.com; it is injected by the launching environment via GIT_CONFIG_PARAMETERS (git labels the origin "command line"), not a repository config file, so git resolves credentials with it instead of reflux`,
+      hint: "Clear the injection in the launching environment (e.g. the Copilot CLI): unset GIT_CONFIG_PARAMETERS and GIT_CONFIG_COUNT, or set GIT_CONFIG_COUNT=0. To force reflux for a single command, reset the helper list on the command line: `git -c credential.helper= -c credential.helper=reflux <cmd>`. reflux cannot override a command-line (`-c`) helper — git evicts reflux from the helper list and never invokes git-credential-reflux.",
+    };
+  }
   return {
     name,
     ok: false,

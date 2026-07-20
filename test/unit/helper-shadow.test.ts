@@ -37,6 +37,18 @@ const GLOBAL_ONLY_NO_RESET = [
   "global\tcredential.https://github.com.helper=reflux",
 ].join("\n");
 
+// A github.com helper injected on the command line via GIT_CONFIG_PARAMETERS
+// (exactly what Copilot CLI injects). git labels the scope `command`, resets
+// the accumulated list, and forces its own helper ahead of reflux.
+const COMMAND_INJECTED_LIST = [
+  "system\tcredential.helper=manager",
+  "global\tcredential.helper=manager",
+  "global\tcredential.https://github.com.helper=",
+  "global\tcredential.https://github.com.helper=reflux",
+  "command\tcredential.https://github.com.helper=",
+  "command\tcredential.https://github.com.helper=copilot",
+].join("\n");
+
 describe("parseHelperScopes", () => {
   it("keeps only generic and github.com helper keys, in order, with scope", () => {
     const parsed = parseHelperScopes(EIDOS_REPO_LIST);
@@ -91,6 +103,13 @@ describe("detectRefluxShadow", () => {
     assert.equal(state.winner, "!gh auth git-credential");
     assert.equal(state.culpritScope, "local");
   });
+
+  it("attributes a command-line injected shadow to the command scope", () => {
+    const state = detectRefluxShadow(parseHelperScopes(COMMAND_INJECTED_LIST));
+    assert.equal(state.shadowed, true);
+    assert.equal(state.winner, "copilot");
+    assert.equal(state.culpritScope, "command");
+  });
 });
 
 describe("checkLocalHelperShadow", () => {
@@ -110,5 +129,22 @@ describe("checkLocalHelperShadow", () => {
   it("stays green for a global-only registration gap (owned by the registration check)", () => {
     const result = checkLocalHelperShadow(parseHelperScopes(GLOBAL_ONLY_NO_RESET));
     assert.equal(result.ok, true);
+  });
+
+  it("labels a GIT_CONFIG_PARAMETERS-injected shadow as command line, not repo-local", () => {
+    const result = checkLocalHelperShadow(parseHelperScopes(COMMAND_INJECTED_LIST));
+    assert.equal(result.ok, false);
+    assert.match(result.name, /command line/i);
+    assert.doesNotMatch(result.detail, /repo-local/i);
+    assert.match(result.detail, /command line|GIT_CONFIG_PARAMETERS/i);
+    assert.match(result.detail, /copilot/);
+  });
+
+  it("recommends clearing the injected env, not a repo-local unset, for a command-line shadow", () => {
+    const result = checkLocalHelperShadow(parseHelperScopes(COMMAND_INJECTED_LIST));
+    assert.ok(result.hint);
+    assert.match(result.hint, /GIT_CONFIG_PARAMETERS/);
+    assert.doesNotMatch(result.hint, /--local --unset-all/);
+    assert.match(result.hint, /cannot override/i);
   });
 });
