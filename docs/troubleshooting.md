@@ -52,26 +52,52 @@ GitHub 404 for a private repo you can access), yet
 `git -c credential.helper= -c credential.helper=reflux ls-remote origin`
 succeeds. A soda/`uatu` write to the same repo fails with `REPO_NOT_READY`.
 
-Cause: the repository has a **repo-local** `credential.helper` that resets the
-helper chain and re-adds another helper (commonly
-`credential.helper=''` then `credential.helper=!gh auth git-credential`).
-Git accumulates helpers across system, global, then local config in order,
-and an empty-string value clears everything before it. Because local config
-is read last, that local reset drops reflux from the chain, so the other
-helper answers with a token that lacks access. reflux cannot override an
-explicit repo-local helper — git's precedence gives the later local reset the
-final say.
+Cause: a `credential.helper` outside the global chain resets the helper list
+and re-adds another helper. Git accumulates helpers across system, global, then
+local config in order, and an empty-string value clears everything before it.
+There are two origins:
+
+- **Repo-local file:** the repository's own config has
+  `credential.helper=''` then `credential.helper=!gh auth git-credential`.
+  Because local config is read last, that reset drops reflux from the chain.
+- **Command line / injected environment:** the launching tool (for example the
+  Copilot CLI) forces its own helper through `GIT_CONFIG_PARAMETERS` and
+  `GIT_CONFIG_COUNT`, for example
+  `GIT_CONFIG_PARAMETERS="'credential.https://github.com.helper=' 'credential.https://github.com.helper=copilot'"`.
+  Git labels these entries origin `command line` and gives them the highest
+  precedence, so reflux is evicted from the helper list and git never invokes
+  git-credential-reflux at all.
+
+reflux cannot override either shadow: git's precedence gives the later reset the
+final say, and a command-line helper wins outright.
 
 Fix:
 
 ```powershell
-reflux doctor            # the `git helper shadow (repo-local)` check names the culprit
+reflux doctor            # names the origin: "(repo-local)" or "(command line)"
+```
+
+For a **repo-local** shadow, remove the override:
+
+```powershell
 git config --local --get-all credential.helper   # inspect the override
 git config --local --unset-all credential.helper # remove it, or re-point at reflux
 ```
 
-After removing the local override, github.com resolution falls back to the
-global chain where reflux runs first.
+For a **command-line / injected** shadow, a repo-local unset does nothing. Clear
+the injection in the launching environment instead:
+
+```powershell
+$env:GIT_CONFIG_PARAMETERS = $null   # unset the injected helper (or set GIT_CONFIG_COUNT=0)
+$env:GIT_CONFIG_COUNT = $null
+# or force reflux for a single command:
+git -c credential.helper= -c credential.helper=reflux ls-remote origin
+```
+
+After the shadow is cleared, github.com resolution falls back to the global
+chain where reflux runs first. When reflux does win, it strips
+`GIT_CONFIG_PARAMETERS`/`GIT_CONFIG_COUNT` from the gh and git children it spawns
+so an injected helper cannot leak into its own token resolution.
 
 ## `reflux install` says `git-credential-manager` was not registered
 

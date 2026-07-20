@@ -120,14 +120,18 @@ Checks:
 - `git-credential-manager` is on PATH (used for passthrough).
 - `git helper registration`: reflux is registered for `https://github.com`
   with an empty-string reset in front of it (global scope).
-- `git helper shadow (repo-local)`: no repo-local `credential.helper` in the
-  current repository overrides reflux for `github.com`. A repo-local helper
+- `git helper shadow (repo-local)` / `git helper shadow (command line)`: no
+  helper outside the global chain overrides reflux for `github.com`. A helper
   that resets the chain and re-adds another helper (for example
-  `!gh auth git-credential`) wins by git's precedence rules and shadows
-  reflux, so a token without repo access can answer instead. reflux cannot
-  override an explicit repo-local helper; the fix is to remove the local
-  override with `git config --local --unset-all credential.helper` or
-  re-point it at reflux.
+  `!gh auth git-credential`, or a `copilot` helper) wins by git's precedence
+  rules and shadows reflux, so a token without repo access can answer instead.
+  The check names the origin git reports: a **repo-local** config file (fix:
+  `git config --local --unset-all credential.helper` or re-point it at reflux),
+  or the **command line** when the launching environment injects the helper via
+  `GIT_CONFIG_PARAMETERS`/`GIT_CONFIG_COUNT` (fix: clear those variables in the
+  launching tool, or run `git -c credential.helper= -c credential.helper=reflux`).
+  reflux cannot override a command-line (`-c`) helper because git evicts reflux
+  from the helper list and never invokes git-credential-reflux.
 - `~/.reflux/config.json` parses cleanly.
 - At least one `gh` account is signed in so reflux can auto-learn personal
   owner mappings.
