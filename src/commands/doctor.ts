@@ -2,6 +2,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import chalk from "chalk";
 import { authStatus, isInstalled, version as ghVersion } from "../auth/gh.js";
+import type { GhAccount } from "../auth/gh.js";
+import { findDuplicateLogins } from "../auth/gh.js";
 import { loadConfig } from "../core/config.js";
 import { inspectHelperList, readHelperValues, readMergedHelperScopes, readUseHttpPath, detectRefluxShadow } from "./install.js";
 import type { ScopedHelper } from "./install.js";
@@ -177,6 +179,21 @@ export function checkLocalHelperShadow(scoped: readonly ScopedHelper[]): CheckRe
   };
 }
 
+export function checkDuplicateGhLogins(accounts: readonly GhAccount[]): CheckResult {
+  const name = "gh duplicate logins";
+  const duplicates = findDuplicateLogins(accounts);
+  if (duplicates.length === 0) {
+    return { name, ok: true, detail: "no gh login is signed in more than once" };
+  }
+  const summary = duplicates.map((d) => `${d.user} (${d.count}x)`).join(", ");
+  return {
+    name,
+    ok: false,
+    detail: `the same gh login is signed in more than once: ${summary}; \`gh auth token --user\` is ambiguous, so reflux can emit a token for the wrong session and one of them may lack repo access`,
+    hint: "Log out the stale duplicate with `gh auth logout --hostname github.com --user <login>`, keeping only the session whose token has access.",
+  };
+}
+
 export async function runDoctor(): Promise<number> {
   const results: CheckResult[] = [
     checkGh(),
@@ -197,6 +214,7 @@ export async function runDoctor(): Promise<number> {
     if (config) {
       const accounts = authStatus();
       results.push(checkGhAccounts(accounts));
+      results.push(checkDuplicateGhLogins(accounts));
       results.push(checkProfilesConfigured());
       results.push(checkMappingsConfigured());
       for (const p of config.profiles) {

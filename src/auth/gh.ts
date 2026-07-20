@@ -40,6 +40,36 @@ export interface GhCommandResult {
 
 const REQUIRED_LOGIN_SCOPES = ["workflow"];
 
+export interface DuplicateLogin {
+  user: string;
+  count: number;
+  activeAmongDuplicates: boolean;
+}
+
+/**
+ * Find gh logins that appear more than once among signed-in accounts. gh keys
+ * accounts by login, so two live sessions for the same login make
+ * `gh auth token --user <login>` ambiguous: reflux may receive the token for
+ * whichever session gh treats as current, and one of them can lack repo
+ * access. Detecting the duplicate lets doctor warn before that misfires.
+ */
+export function findDuplicateLogins(accounts: readonly GhAccount[]): DuplicateLogin[] {
+  const counts = new Map<string, { count: number; anyActive: boolean }>();
+  for (const account of accounts) {
+    const entry = counts.get(account.user) ?? { count: 0, anyActive: false };
+    entry.count += 1;
+    entry.anyActive = entry.anyActive || account.active;
+    counts.set(account.user, entry);
+  }
+  const duplicates: DuplicateLogin[] = [];
+  for (const [user, entry] of counts) {
+    if (entry.count > 1) {
+      duplicates.push({ user, count: entry.count, activeAmongDuplicates: entry.anyActive });
+    }
+  }
+  return duplicates;
+}
+
 /** True if `gh` is callable on PATH. */
 export function isInstalled(): boolean {
   try {
