@@ -3,7 +3,8 @@ import { promisify } from "node:util";
 import chalk from "chalk";
 import { authStatus, isInstalled, version as ghVersion } from "../auth/gh.js";
 import { loadConfig } from "../core/config.js";
-import { inspectHelperList, readHelperValues, readUseHttpPath } from "./install.js";
+import { inspectHelperList, readHelperValues, readMergedHelperScopes, readUseHttpPath, detectRefluxShadow } from "./install.js";
+import type { ScopedHelper } from "./install.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -153,11 +154,35 @@ function checkProfile(name: string, ghUser: string, accounts: { user: string }[]
   };
 }
 
+export function checkLocalHelperShadow(scoped: readonly ScopedHelper[]): CheckResult {
+  const name = "git helper shadow (repo-local)";
+  const globalOnly = scoped.filter((s) => s.scope === "system" || s.scope === "global");
+  const globalShadowed = detectRefluxShadow(globalOnly).shadowed;
+  const merged = detectRefluxShadow(scoped);
+  // Only fire for a repo-local/worktree shadow. A shadow already present in the
+  // global chain is the install-registration problem that `git helper
+  // registration` owns; flagging it here too would be redundant noise.
+  if (globalShadowed || !merged.shadowed) {
+    const detail = merged.effective.length > 0
+      ? `no repo-local helper shadows reflux; effective github.com helper = [${merged.effective.map((v) => JSON.stringify(v)).join(", ")}]`
+      : "no repo-local credential.helper override in this repository";
+    return { name, ok: true, detail };
+  }
+  const winner = merged.winner ?? "another helper";
+  return {
+    name,
+    ok: false,
+    detail: `a repo-local credential.helper (${JSON.stringify(winner)}) shadows reflux for github.com in this repository; git resolves credentials with it instead of reflux, so a token without repo access can win`,
+    hint: "Remove the repo-local override with `git config --local --unset-all credential.helper` (run inside this repo), or re-point it at reflux. reflux cannot override an explicit repo-local helper — git's precedence gives the later repo-local reset the final say.",
+  };
+}
+
 export async function runDoctor(): Promise<number> {
   const results: CheckResult[] = [
     checkGh(),
     await checkGcm(),
     await checkHelperRegistered(),
+    checkLocalHelperShadow(await readMergedHelperScopes()),
     await checkUseHttpPath(),
     checkConfig(),
   ];

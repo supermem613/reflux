@@ -103,6 +103,118 @@ export function inspectHelperList(values: readonly string[]): HelperState {
   };
 }
 
+/**
+ * A `credential.helper` value together with the git config scope it came
+ * from. Scope is git's own label from `--show-scope`: `system`, `global`,
+ * `local`, `worktree`, or `command`.
+ */
+export interface ScopedHelper {
+  scope: string;
+  value: string;
+}
+
+export interface RefluxShadowState {
+  /** The effective ordered helper values git consults for github.com. */
+  effective: string[];
+  /** True when reflux is not the first effective helper, or is absent. */
+  shadowed: boolean;
+  /** The scope of the helper that runs before reflux, when shadowed. */
+  culpritScope: string | null;
+  /** The helper value that runs before reflux, or replaces it, when shadowed. */
+  winner: string | null;
+}
+
+const GENERIC_HELPER_KEY = "credential.helper";
+
+/**
+ * Parse `git config --list --show-scope` output into the ordered list of
+ * credential.helper values that affect github.com, preserving config order.
+ *
+ * Only the generic `credential.helper` and the host-scoped
+ * `credential.https://github.com.helper` keys participate in github.com
+ * resolution. Other url-scoped helpers such as gist.github.com are ignored.
+ * The merged output order is git's own read order (system, then global, then
+ * local, preserving within-file order), which is the order git accumulates
+ * helpers in, so an empty-string reset later in the list clears earlier ones.
+ */
+export function parseHelperScopes(configListOutput: string): ScopedHelper[] {
+  const result: ScopedHelper[] = [];
+  for (const raw of configListOutput.split(/\r?\n/)) {
+    const tab = raw.indexOf("\t");
+    if (tab < 0) {
+      continue;
+    }
+    const scope = raw.slice(0, tab);
+    const kv = raw.slice(tab + 1);
+    const eq = kv.indexOf("=");
+    const key = eq < 0 ? kv : kv.slice(0, eq);
+    const value = eq < 0 ? "" : kv.slice(eq + 1);
+    if (key === GENERIC_HELPER_KEY || key === HELPER_KEY) {
+      result.push({ scope, value });
+    }
+  }
+  return result;
+}
+
+/**
+ * Apply git's empty-reset accumulation to an ordered ScopedHelper list and
+ * return the final ordered list of effective helpers for github.com. An empty
+ * value clears everything accumulated so far, matching git's rule that
+ * `credential.helper=` resets the helper chain.
+ */
+export function computeEffectiveGithubHelpers(scoped: readonly ScopedHelper[]): ScopedHelper[] {
+  let effective: ScopedHelper[] = [];
+  for (const entry of scoped) {
+    if (entry.value === "") {
+      effective = [];
+    } else {
+      effective.push(entry);
+    }
+  }
+  return effective;
+}
+
+/**
+ * Decide whether reflux still wins github.com credential resolution given the
+ * ordered, scope-tagged helper entries. reflux wins only when it is the first
+ * effective helper: git calls helpers in order and the first to return a
+ * password wins, and reflux always returns one. Anything earlier answers
+ * before reflux, and an empty reset after reflux drops it entirely.
+ */
+export function detectRefluxShadow(scoped: readonly ScopedHelper[]): RefluxShadowState {
+  const effective = computeEffectiveGithubHelpers(scoped);
+  const values = effective.map((e) => e.value);
+  if (values[0] === "reflux") {
+    return { effective: values, shadowed: false, culpritScope: null, winner: null };
+  }
+  const winnerEntry = effective[0] ?? null;
+  return {
+    effective: values,
+    shadowed: true,
+    culpritScope: winnerEntry ? winnerEntry.scope : null,
+    winner: winnerEntry ? winnerEntry.value : null,
+  };
+}
+
+/**
+ * Read the merged, scope-tagged credential.helper entries that apply to
+ * github.com from the current working directory. Unlike readHelperValues,
+ * this does NOT force `--global`: it runs plain `git config --list` so the
+ * repo-local scope of the current directory is included, which is exactly
+ * what a repo-local shadow lives in.
+ */
+export async function readMergedHelperScopes(): Promise<ScopedHelper[]> {
+  let stdout = "";
+  try {
+    const r = await execFileAsync("git", ["config", "--list", "--show-scope"]);
+    stdout = r.stdout;
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { stdout?: string };
+    stdout = e.stdout ?? "";
+  }
+  return parseHelperScopes(stdout);
+}
+
 async function ensureHelperRegistered(): Promise<void> {
   const current = await readHelperValues();
   const state = inspectHelperList(current);
