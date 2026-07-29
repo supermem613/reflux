@@ -33,7 +33,7 @@ reflux --version
 ```
 
 `npm link` creates global symlinks pointing at this checkout, so
-`reflux update` (which runs `git pull && npm install && npm run build` in
+`reflux update` (which runs `sd`/`git pull && npm install && npm run build` in
 this dir) updates your installed binary in place.
 
 ## 2. Sign `gh` into each identity (one-time)

@@ -1,13 +1,15 @@
 import chalk from "chalk";
-import { exec } from "node:child_process";
+import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { git, isGitRepo } from "../utils/git.js";
+import { sanitizedGitChildEnv } from "../utils/child-env.js";
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * `reflux update` — refresh reflux from its development clone.
@@ -31,6 +33,9 @@ const execAsync = promisify(exec);
  *      `npm link` from there. We do not silently `npm install -g` because
  *      that recreates the same brittle global-prefix mess we are trying
  *      to leave behind.
+ *
+ * The pull backend is auto-detected: a soda-managed clone is pulled with
+ * `sd pull`, everything else with `git pull --ff-only`.
  */
 
 export interface UpdateTarget {
@@ -43,14 +48,107 @@ type ExecResult = {
   stderr: string;
 }
 
+type SodaEnvelope<TData> = {
+  ok?: boolean;
+  data?: TData;
+  error?: string;
+}
+
+type SodaPullOutcome = {
+  worktreeUpdated?: boolean;
+}
+
 export type UpdateDeps = {
   target?: UpdateTarget;
   runGit?: (args: string[], cwd: string) => Promise<ExecResult>;
+  runSd?: (args: string[], cwd: string) => Promise<ExecResult>;
   runCommand?: (command: string, cwd: string) => Promise<void>;
 }
 
 export function gitPullMadeNoChanges(output: string): boolean {
   return /already up[- ]to[- ]date\.?/i.test(output);
+}
+
+/**
+ * `sd` is an npm bin shim (sd.cmd / sd.ps1) on Windows, not a native exe, and
+ * execFile cannot launch a .cmd directly. Passing an args array with
+ * `shell: true` is deprecated under Node DEP0190 and unsafe, so wrap the
+ * command in an explicit `cmd.exe /d /s /c` argv instead.
+ */
+async function defaultRunSd(args: string[], cwd: string): Promise<ExecResult> {
+  const invocation = process.platform === "win32"
+    ? { command: "cmd.exe", args: ["/d", "/s", "/c", "sd", ...args] }
+    : { command: "sd", args };
+  const result = await execFileAsync(invocation.command, invocation.args, {
+    cwd,
+    maxBuffer: 10 * 1024 * 1024,
+    env: sanitizedGitChildEnv(),
+  });
+  return { stdout: String(result.stdout), stderr: String(result.stderr) };
+}
+
+/**
+ * A soda-managed clone must not be pulled with raw git: soda's git-interlock
+ * hooks block the write, and soda tracks stream state that `git pull` bypasses.
+ * `sd status` reporting an initialized repo is the same authoritative signal
+ * rotunda trusts; any failure to run or parse it means "not soda".
+ */
+async function isSodaManagedRepo(
+  runSd: (args: string[], cwd: string) => Promise<ExecResult>,
+  dir: string,
+): Promise<boolean> {
+  try {
+    const result = await runSd(["status"], dir);
+    const envelope = JSON.parse(result.stdout) as SodaEnvelope<{ summary?: { initialized?: boolean } }>;
+    return envelope.ok === true && envelope.data?.summary?.initialized === true;
+  } catch {
+    return false;
+  }
+}
+
+function parseSodaPull(stdout: string): boolean {
+  const envelope = JSON.parse(stdout) as SodaEnvelope<SodaPullOutcome[]>;
+  if (envelope.ok !== true) {
+    throw new Error(`sd pull failed: ${envelope.error ?? "unknown error"}`);
+  }
+  if (!Array.isArray(envelope.data)) {
+    throw new Error("sd pull failed: missing pull outcomes");
+  }
+  return envelope.data.some((outcome) => outcome.worktreeUpdated === true);
+}
+
+function stdoutFromError(err: unknown): string | undefined {
+  if (typeof err === "object" && err !== null && "stdout" in err) {
+    const stdout = (err as { stdout?: unknown }).stdout;
+    return typeof stdout === "string" ? stdout : undefined;
+  }
+  return undefined;
+}
+
+/** Returns true when the pull actually changed the worktree. */
+async function pullWithSoda(
+  runSd: (args: string[], cwd: string) => Promise<ExecResult>,
+  dir: string,
+): Promise<boolean> {
+  try {
+    const result = await runSd(["pull"], dir);
+    return parseSodaPull(result.stdout);
+  } catch (err: unknown) {
+    // sd reports a refused pull as a non-zero exit with the JSON envelope still
+    // on stdout, so the envelope error beats the raw exec message.
+    const stdout = stdoutFromError(err);
+    if (stdout) {
+      try {
+        return parseSodaPull(stdout);
+      } catch (parseErr: unknown) {
+        if (parseErr instanceof Error && parseErr.message.startsWith("sd pull failed:")) {
+          throw parseErr;
+        }
+      }
+    }
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`sd pull failed: ${detail}`);
+  }
 }
 
 function resolveModuleRoot(): string {
@@ -104,6 +202,7 @@ async function runStep(
 export async function updateCommand(deps: UpdateDeps = {}): Promise<void> {
   const target = deps.target ?? await locateUpdateTarget();
   const runGit = deps.runGit ?? git;
+  const runSd = deps.runSd ?? defaultRunSd;
   const runCommand = deps.runCommand ?? defaultRunCommand;
 
   if (!target) {
@@ -121,20 +220,32 @@ export async function updateCommand(deps: UpdateDeps = {}): Promise<void> {
 
   console.log(chalk.dim(`  Reflux repo: ${target.dir}\n`));
 
+  const sodaManaged = await isSodaManagedRepo(runSd, target.dir);
+  const pullLabel = sodaManaged ? "sd pull" : "git pull";
+
   console.log(chalk.bold("  ↓ Pulling latest..."));
   try {
-    const result = await runGit(["pull", "--ff-only"], target.dir);
-    const output = (result.stdout + result.stderr).trim();
-    if (gitPullMadeNoChanges(output)) {
-      console.log(chalk.dim("    Already up to date."));
-      console.log(chalk.dim("    Skipping install and build."));
-      return;
+    if (sodaManaged) {
+      const worktreeUpdated = await pullWithSoda(runSd, target.dir);
+      if (!worktreeUpdated) {
+        console.log(chalk.dim("    Already up to date."));
+        console.log(chalk.dim("    Skipping install and build."));
+        return;
+      }
+      console.log(chalk.green("    ✓ Pulled new changes."));
     } else {
+      const result = await runGit(["pull", "--ff-only"], target.dir);
+      const output = (result.stdout + result.stderr).trim();
+      if (gitPullMadeNoChanges(output)) {
+        console.log(chalk.dim("    Already up to date."));
+        console.log(chalk.dim("    Skipping install and build."));
+        return;
+      }
       console.log(chalk.green("    ✓ Pulled new changes."));
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(chalk.red("  ✗ git pull failed:") + ` ${msg}`);
+    console.error(chalk.red(`  ✗ ${pullLabel} failed:`) + ` ${msg}`);
     process.exit(1);
   }
 

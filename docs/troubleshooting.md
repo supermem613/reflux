@@ -146,10 +146,11 @@ git push origin main 2>&1 | Out-String
 
 Look for lines tagged `[helper]`.
 
-## `reflux update` fails on `git pull`
+## `reflux update` fails on the pull
 
 Usually means you have local uncommitted changes in the install dir.
-`git pull --ff-only` refuses to fast-forward over a dirty working tree.
+`git pull --ff-only` refuses to fast-forward over a dirty working tree, and
+`sd pull` refuses when the worktree has open files.
 
 ```powershell
 cd <reflux-install-dir>

@@ -175,9 +175,12 @@ Profiles, mappings, and `gh` accounts are left intact.
 
 Self-update. Runs in the install repo:
 
-1. `git pull --ff-only`
+1. `sd pull` when the clone is soda-managed, otherwise `git pull --ff-only`
 2. `npm install --no-audit --no-fund`
 3. `npm run build`
+
+The pull backend is detected per invocation by probing `sd status`: a repo
+that reports `initialized` is pulled with soda, anything else with git.
 
 If you cloned the repo to `~/repos/reflux` and `npm link`-ed the bin, this
 gives you in-place updates.

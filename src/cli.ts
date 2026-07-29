@@ -135,7 +135,7 @@ program
 
 program
   .command("update")
-  .description("Self-update: git pull, npm install, npm run build")
+  .description("Self-update: sd/git pull, npm install, npm run build")
   .action(updateCommand);
 
 if (process.argv.slice(2).length === 0) {

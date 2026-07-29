@@ -127,7 +127,7 @@ git push work main     # → routed to work     → gh user <work-login>
 | `reflux doctor` | Diagnose installation and routing config problems |
 | `reflux install` | Register with git config |
 | `reflux uninstall` | Reverse `install` |
-| `reflux update` | Self-update: `git pull` → `npm install` → `npm run build` |
+| `reflux update` | Self-update: `sd`/`git pull` → `npm install` → `npm run build` |
 
 See [docs/commands.md](docs/commands.md) for full details.
 

@@ -182,7 +182,8 @@ that scope would multiply the project's surface area for no user gain.
 
 1. Resolve the install repo from `import.meta.url` (`dist/commands/update.js`
    → repo root is two directories up).
-2. `git pull --ff-only` in that repo.
+2. `sd pull` when `sd status` reports a soda-managed repo, otherwise
+   `git pull --ff-only`.
 3. `npm install --no-audit --no-fund`.
 4. `npm run build`.
 
