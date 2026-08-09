@@ -213,7 +213,7 @@ describe("runSelfUpdate", () => {
       () =>
         runSelfUpdate({
           target: { dir: "repo", isLinked: true },
-      hasSodaWorkspace: () => false,
+          hasSodaWorkspace: () => false,
           runSd: async (args) => {
             calls.push(recordCall("sd", args));
             if (args[0] === "status") {
