@@ -1,14 +1,12 @@
-import chalk from "chalk";
-import { exec, execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { dirname, join } from "node:path";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git, isGitRepo } from "../utils/git.js";
+import { promisify } from "node:util";
 import { sanitizedGitChildEnv } from "../utils/child-env.js";
+import { git, isGitRepo } from "../utils/git.js";
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
 /**
@@ -46,45 +44,66 @@ export interface UpdateTarget {
 type ExecResult = {
   stdout: string;
   stderr: string;
-}
+};
 
 type SodaEnvelope<TData> = {
   ok?: boolean;
   data?: TData;
   error?: string;
-}
+};
 
 type SodaPullOutcome = {
+  status?: string;
   worktreeUpdated?: boolean;
-}
+};
 
 export type UpdateDeps = {
   target?: UpdateTarget;
   runGit?: (args: string[], cwd: string) => Promise<ExecResult>;
   runSd?: (args: string[], cwd: string) => Promise<ExecResult>;
-  runCommand?: (command: string, cwd: string) => Promise<void>;
-}
+  runNpm?: (args: string[], cwd: string) => Promise<ExecResult>;
+};
+
+export type UpdateResult = {
+  repoRoot: string;
+  isLinked: boolean;
+  beforeRevision: string | null;
+  afterRevision: string | null;
+  pulled: boolean;
+  alreadyUpToDate: boolean;
+  installed: boolean;
+  built: boolean;
+  linkRequired: boolean;
+};
 
 export function gitPullMadeNoChanges(output: string): boolean {
   return /already up[- ]to[- ]date\.?/i.test(output);
 }
 
 /**
- * `sd` is an npm bin shim (sd.cmd / sd.ps1) on Windows, not a native exe, and
- * execFile cannot launch a .cmd directly. Passing an args array with
+ * `sd` and `npm` are npm bin shims (sd.cmd / npm.cmd) on Windows, not native
+ * exes, and execFile cannot launch a .cmd directly. Passing an args array with
  * `shell: true` is deprecated under Node DEP0190 and unsafe, so wrap the
  * command in an explicit `cmd.exe /d /s /c` argv instead.
  */
-async function defaultRunSd(args: string[], cwd: string): Promise<ExecResult> {
+async function defaultRunShim(command: string, args: string[], cwd: string): Promise<ExecResult> {
   const invocation = process.platform === "win32"
-    ? { command: "cmd.exe", args: ["/d", "/s", "/c", "sd", ...args] }
-    : { command: "sd", args };
+    ? { command: "cmd.exe", args: ["/d", "/s", "/c", command, ...args] }
+    : { command, args };
   const result = await execFileAsync(invocation.command, invocation.args, {
     cwd,
     maxBuffer: 10 * 1024 * 1024,
     env: sanitizedGitChildEnv(),
   });
   return { stdout: String(result.stdout), stderr: String(result.stderr) };
+}
+
+async function defaultRunSd(args: string[], cwd: string): Promise<ExecResult> {
+  return defaultRunShim("sd", args, cwd);
+}
+
+async function defaultRunNpm(args: string[], cwd: string): Promise<ExecResult> {
+  return defaultRunShim("npm", args, cwd);
 }
 
 /**
@@ -106,6 +125,14 @@ async function isSodaManagedRepo(
   }
 }
 
+function stdoutFromError(err: unknown): string | undefined {
+  if (typeof err === "object" && err !== null && "stdout" in err) {
+    const stdout = (err as { stdout?: unknown }).stdout;
+    return typeof stdout === "string" ? stdout : undefined;
+  }
+  return undefined;
+}
+
 function parseSodaPull(stdout: string): boolean {
   const envelope = JSON.parse(stdout) as SodaEnvelope<SodaPullOutcome[]>;
   if (envelope.ok !== true) {
@@ -115,14 +142,6 @@ function parseSodaPull(stdout: string): boolean {
     throw new Error("sd pull failed: missing pull outcomes");
   }
   return envelope.data.some((outcome) => outcome.worktreeUpdated === true);
-}
-
-function stdoutFromError(err: unknown): string | undefined {
-  if (typeof err === "object" && err !== null && "stdout" in err) {
-    const stdout = (err as { stdout?: unknown }).stdout;
-    return typeof stdout === "string" ? stdout : undefined;
-  }
-  return undefined;
 }
 
 /** Returns true when the pull actually changed the worktree. */
@@ -178,90 +197,101 @@ async function locateUpdateTarget(): Promise<UpdateTarget | null> {
   return null;
 }
 
-async function defaultRunCommand(cmd: string, cwd: string): Promise<void> {
-  await execAsync(cmd, { cwd });
+async function currentRevision(
+  runGit: (args: string[], cwd: string) => Promise<ExecResult>,
+  dir: string,
+): Promise<string | null> {
+  const result = await runGit(["rev-parse", "HEAD"], dir);
+  return result.stdout.trim() || null;
 }
 
-async function runStep(
-  label: string,
-  cmd: string,
-  cwd: string,
-  runCommand: (command: string, cwd: string) => Promise<void>,
-): Promise<void> {
-  console.log(chalk.bold(`\n  ${label}`));
-  try {
-    await runCommand(cmd, cwd);
-    console.log(chalk.green(`    ✓ ${label.replace(/^[^\w]+\s*/, "")} done.`));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(chalk.red(`  ✗ ${label} failed:`) + ` ${msg}`);
-    process.exit(1);
-  }
+function missingTargetError(): Error {
+  const lookedIn = [
+    process.env.REFLUX_DEV_DIR ? `$REFLUX_DEV_DIR = ${process.env.REFLUX_DEV_DIR}` : null,
+    join(homedir(), "repos", "reflux"),
+  ].filter((line): line is string => Boolean(line));
+  return new Error(
+    "Reflux is not linked and no development clone was found. "
+    + `Looked in: ${lookedIn.join("; ")}. `
+    + "Clone reflux to ~/repos/reflux (or set REFLUX_DEV_DIR), then run `npm link` from there.",
+  );
 }
 
-export async function updateCommand(deps: UpdateDeps = {}): Promise<void> {
+export async function runSelfUpdate(deps: UpdateDeps = {}): Promise<UpdateResult> {
   const target = deps.target ?? await locateUpdateTarget();
   const runGit = deps.runGit ?? git;
   const runSd = deps.runSd ?? defaultRunSd;
-  const runCommand = deps.runCommand ?? defaultRunCommand;
+  const runNpm = deps.runNpm ?? defaultRunNpm;
 
   if (!target) {
-    const moduleRoot = resolveModuleRoot();
-    console.log(chalk.dim(`  Reflux module: ${moduleRoot}\n`));
-    console.error(chalk.red("Error:") + " Reflux is not linked and no development clone was found.");
-    console.error(chalk.dim("  Looked in:"));
-    if (process.env.REFLUX_DEV_DIR) {
-      console.error(chalk.dim(`    $REFLUX_DEV_DIR = ${process.env.REFLUX_DEV_DIR}`));
-    }
-    console.error(chalk.dim(`    ${join(homedir(), "repos", "reflux")}`));
-    console.error(chalk.dim("\n  Clone reflux to ~/repos/reflux (or set REFLUX_DEV_DIR), then run `npm link` from there."));
-    process.exit(1);
+    throw missingTargetError();
   }
 
-  console.log(chalk.dim(`  Reflux repo: ${target.dir}\n`));
-
+  const beforeRevision = await currentRevision(runGit, target.dir);
   const sodaManaged = await isSodaManagedRepo(runSd, target.dir);
-  const pullLabel = sodaManaged ? "sd pull" : "git pull";
+  let pulled = false;
+  if (sodaManaged) {
+    pulled = await pullWithSoda(runSd, target.dir);
+  } else {
+    await runGit(["pull", "--ff-only"], target.dir);
+  }
+  const afterRevision = await currentRevision(runGit, target.dir);
+  const alreadyUpToDate = sodaManaged ? !pulled : beforeRevision === afterRevision;
 
-  console.log(chalk.bold("  ↓ Pulling latest..."));
-  try {
-    if (sodaManaged) {
-      const worktreeUpdated = await pullWithSoda(runSd, target.dir);
-      if (!worktreeUpdated) {
-        console.log(chalk.dim("    Already up to date."));
-        console.log(chalk.dim("    Skipping install and build."));
-        return;
-      }
-      console.log(chalk.green("    ✓ Pulled new changes."));
-    } else {
-      const result = await runGit(["pull", "--ff-only"], target.dir);
-      const output = (result.stdout + result.stderr).trim();
-      if (gitPullMadeNoChanges(output)) {
-        console.log(chalk.dim("    Already up to date."));
-        console.log(chalk.dim("    Skipping install and build."));
-        return;
-      }
-      console.log(chalk.green("    ✓ Pulled new changes."));
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(chalk.red(`  ✗ ${pullLabel} failed:`) + ` ${msg}`);
-    process.exit(1);
+  if (alreadyUpToDate) {
+    return {
+      repoRoot: target.dir,
+      isLinked: target.isLinked,
+      beforeRevision,
+      afterRevision,
+      pulled: false,
+      alreadyUpToDate: true,
+      installed: false,
+      built: false,
+      linkRequired: !target.isLinked,
+    };
   }
 
-  await runStep("⬡ Installing dependencies...", "npm install --no-audit --no-fund", target.dir, runCommand);
-  await runStep("🔨 Building...", "npm run build", target.dir, runCommand);
+  await runNpm(["install", "--no-audit", "--no-fund"], target.dir);
+  await runNpm(["run", "build"], target.dir);
+  return {
+    repoRoot: target.dir,
+    isLinked: target.isLinked,
+    beforeRevision,
+    afterRevision,
+    pulled: true,
+    alreadyUpToDate: false,
+    installed: true,
+    built: true,
+    linkRequired: !target.isLinked,
+  };
+}
 
-  if (!target.isLinked) {
-    // The dev clone was found via the fallback, but the running reflux is
-    // not the linked clone — most likely a leftover global install. Ask
-    // the user to run `npm link` from the clone so future invocations pick
-    // up the rebuilt dist/ automatically.
-    console.log(chalk.yellow("\n  ⚠  Reflux is not linked to this clone."));
-    console.log(chalk.dim(`     Run:  cd ${target.dir} && npm link`));
-    console.log(chalk.dim("     After that, `reflux update` will refresh in place with no global install."));
+function writeHuman(result: UpdateResult): void {
+  process.stdout.write("reflux repo: " + result.repoRoot + "\n");
+  if (result.alreadyUpToDate) {
+    process.stdout.write("Already up to date. Skipping install and build.\n");
+    if (result.linkRequired) {
+      process.stdout.write(
+        "Reflux is not linked to this clone. Run: cd " + result.repoRoot + " && npm link\n",
+      );
+    }
     return;
   }
+  process.stdout.write("Pulled new changes. Dependencies installed. Build complete.\n");
+  if (result.linkRequired) {
+    process.stdout.write(
+      "Reflux is not linked to this clone. Run: cd " + result.repoRoot + " && npm link\n",
+    );
+  }
+}
 
-  console.log(chalk.green("\n  ✓ Reflux updated successfully."));
+export async function updateCommand(): Promise<void> {
+  try {
+    writeHuman(await runSelfUpdate());
+  } catch (err: unknown) {
+    const hint = err instanceof Error ? err.message : String(err);
+    process.stderr.write("reflux update failed: " + hint + "\n");
+    process.exitCode = 1;
+  }
 }

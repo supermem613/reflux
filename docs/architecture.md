@@ -178,14 +178,17 @@ that scope would multiply the project's surface area for no user gain.
 
 ## Self-update
 
-`reflux update` (`src/commands/update.ts`) follows the rotunda pattern:
+`reflux update` (`src/commands/update.ts`) follows the atrium self-update
+pattern:
 
 1. Resolve the install repo from `import.meta.url` (`dist/commands/update.js`
-   → repo root is two directories up).
-2. `sd pull` when `sd status` reports a soda-managed repo, otherwise
-   `git pull --ff-only`.
-3. `npm install --no-audit --no-fund`.
-4. `npm run build`.
+   → repo root is two directories up), with fallback to `$REFLUX_DEV_DIR` or
+   `~/repos/reflux` when the running binary is not a linked clone.
+2. Record `git rev-parse HEAD`, then `sd pull` when `sd status` reports a
+   soda-managed repo, otherwise `git pull --ff-only`.
+3. Skip install/build when soda reports no worktree change, or when the
+   revision is unchanged after a git pull.
+4. Otherwise `npm install --no-audit --no-fund` then `npm run build`.
 
 The update command runs in the same shell — there's no relauncher, no
 PowerShell wrapper. Subsequent invocations of `reflux` pick up the new
