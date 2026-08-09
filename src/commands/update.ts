@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,6 +62,7 @@ export type UpdateDeps = {
   runGit?: (args: string[], cwd: string) => Promise<ExecResult>;
   runSd?: (args: string[], cwd: string) => Promise<ExecResult>;
   runNpm?: (args: string[], cwd: string) => Promise<ExecResult>;
+  hasSodaWorkspace?: (dir: string) => boolean;
 };
 
 export type UpdateResult = {
@@ -78,6 +79,28 @@ export type UpdateResult = {
 
 export function gitPullMadeNoChanges(output: string): boolean {
   return /already up[- ]to[- ]date\.?/i.test(output);
+}
+
+export function hasSodaWorkspaceMarkers(dir: string): boolean {
+  const workspaceDir = join(dir, ".sd");
+  const metaPath = join(workspaceDir, "meta.json");
+  const repoIdPath = join(workspaceDir, "repo-id");
+  if (!existsSync(metaPath) || !existsSync(repoIdPath)) {
+    return false;
+  }
+  try {
+    return readFileSync(repoIdPath, "utf8").trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+export function isSodaGitInterlockError(message: string): boolean {
+  return /sd-powered repo/i.test(message) || /raw git .* blocked/i.test(message);
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**
@@ -106,21 +129,27 @@ async function defaultRunNpm(args: string[], cwd: string): Promise<ExecResult> {
   return defaultRunShim("npm", args, cwd);
 }
 
-/**
- * A soda-managed clone must not be pulled with raw git: soda's git-interlock
- * hooks block the write, and soda tracks stream state that `git pull` bypasses.
- * `sd status` reporting an initialized repo is the same authoritative signal
- * rotunda trusts; any failure to run or parse it means "not soda".
- */
-async function isSodaManagedRepo(
+function parseSodaStatus(stdout: string): boolean {
+  const envelope = JSON.parse(stdout) as SodaEnvelope<{ summary?: { initialized?: boolean } }>;
+  return envelope.ok === true && envelope.data?.summary?.initialized === true;
+}
+
+async function probeSodaStatus(
   runSd: (args: string[], cwd: string) => Promise<ExecResult>,
   dir: string,
 ): Promise<boolean> {
   try {
     const result = await runSd(["status"], dir);
-    const envelope = JSON.parse(result.stdout) as SodaEnvelope<{ summary?: { initialized?: boolean } }>;
-    return envelope.ok === true && envelope.data?.summary?.initialized === true;
-  } catch {
+    return parseSodaStatus(result.stdout);
+  } catch (err: unknown) {
+    const stdout = stdoutFromError(err);
+    if (stdout) {
+      try {
+        return parseSodaStatus(stdout);
+      } catch {
+        return false;
+      }
+    }
     return false;
   }
 }
@@ -227,16 +256,43 @@ export async function runSelfUpdate(deps: UpdateDeps = {}): Promise<UpdateResult
     throw missingTargetError();
   }
 
+  const hasSodaWorkspace = deps.hasSodaWorkspace ?? hasSodaWorkspaceMarkers;
   const beforeRevision = await currentRevision(runGit, target.dir);
-  const sodaManaged = await isSodaManagedRepo(runSd, target.dir);
+  const sodaByStatus = await probeSodaStatus(runSd, target.dir);
+  const sodaByMarkers = hasSodaWorkspace(target.dir);
+  const sodaManaged = sodaByStatus || sodaByMarkers;
   let pulled = false;
   if (sodaManaged) {
-    pulled = await pullWithSoda(runSd, target.dir);
+    try {
+      pulled = await pullWithSoda(runSd, target.dir);
+    } catch (err: unknown) {
+      const detail = errorMessage(err);
+      if (sodaByMarkers && !sodaByStatus) {
+        throw new Error(
+          `This reflux install is soda-managed, but sd pull failed. Put sd on PATH and rerun reflux update. ${detail}`,
+        );
+      }
+      throw err instanceof Error ? err : new Error(detail);
+    }
   } else {
-    await runGit(["pull", "--ff-only"], target.dir);
+    try {
+      await runGit(["pull", "--ff-only"], target.dir);
+    } catch (err: unknown) {
+      const detail = errorMessage(err);
+      if (!isSodaGitInterlockError(detail)) {
+        throw err instanceof Error ? err : new Error(detail);
+      }
+      try {
+        pulled = await pullWithSoda(runSd, target.dir);
+      } catch (sodaErr: unknown) {
+        throw new Error(
+          `Pull was blocked by soda interlock hooks, and sd pull failed. Put sd on PATH and rerun reflux update. ${errorMessage(sodaErr)}`,
+        );
+      }
+    }
   }
   const afterRevision = await currentRevision(runGit, target.dir);
-  const alreadyUpToDate = sodaManaged ? !pulled : beforeRevision === afterRevision;
+  const alreadyUpToDate = sodaManaged || pulled ? !pulled : beforeRevision === afterRevision;
 
   if (alreadyUpToDate) {
     return {

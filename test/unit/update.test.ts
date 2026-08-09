@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { gitPullMadeNoChanges, runSelfUpdate } from "../../src/commands/update.js";
+import { gitPullMadeNoChanges, isSodaGitInterlockError, runSelfUpdate } from "../../src/commands/update.js";
 
 function recordCall(kind: string, args: string[]): string {
   return [kind, ...args].join(" ");
@@ -21,6 +21,7 @@ describe("runSelfUpdate", () => {
     const calls: string[] = [];
     const result = await runSelfUpdate({
       target: { dir: "repo", isLinked: true },
+      hasSodaWorkspace: () => false,
       runSd: async (args) => {
         calls.push(recordCall("sd", args));
         return { stdout: NOT_SODA, stderr: "" };
@@ -55,6 +56,7 @@ describe("runSelfUpdate", () => {
     const calls: string[] = [];
     const result = await runSelfUpdate({
       target: { dir: "repo", isLinked: true },
+      hasSodaWorkspace: () => false,
       runSd: async (args) => {
         calls.push(recordCall("sd", args));
         return { stdout: NOT_SODA, stderr: "" };
@@ -92,6 +94,7 @@ describe("runSelfUpdate", () => {
     const calls: string[] = [];
     const result = await runSelfUpdate({
       target: { dir: "repo", isLinked: true },
+      hasSodaWorkspace: () => false,
       runSd: async (args) => {
         calls.push(recordCall("sd", args));
         return {
@@ -130,6 +133,7 @@ describe("runSelfUpdate", () => {
     const calls: string[] = [];
     const result = await runSelfUpdate({
       target: { dir: "repo", isLinked: true },
+      hasSodaWorkspace: () => false,
       runSd: async (args) => {
         calls.push(recordCall("sd", args));
         return {
@@ -162,6 +166,7 @@ describe("runSelfUpdate", () => {
     const calls: string[] = [];
     const result = await runSelfUpdate({
       target: { dir: "repo", isLinked: true },
+      hasSodaWorkspace: () => false,
       runSd: async (args) => {
         calls.push(recordCall("sd", args));
         return { stdout: sodaStatus(false), stderr: "" };
@@ -184,6 +189,7 @@ describe("runSelfUpdate", () => {
     const calls: string[] = [];
     const result = await runSelfUpdate({
       target: { dir: "repo", isLinked: true },
+      hasSodaWorkspace: () => false,
       runSd: async () => {
         throw new Error("spawn sd ENOENT");
       },
@@ -207,6 +213,7 @@ describe("runSelfUpdate", () => {
       () =>
         runSelfUpdate({
           target: { dir: "repo", isLinked: true },
+      hasSodaWorkspace: () => false,
           runSd: async (args) => {
             calls.push(recordCall("sd", args));
             if (args[0] === "status") {
@@ -233,6 +240,7 @@ describe("runSelfUpdate", () => {
   it("marks linkRequired when the install is not linked", async () => {
     const result = await runSelfUpdate({
       target: { dir: "repo", isLinked: false },
+      hasSodaWorkspace: () => false,
       runSd: async () => ({ stdout: NOT_SODA, stderr: "" }),
       runGit: async (args) => {
         if (args.join(" ") === "rev-parse HEAD") {
@@ -247,9 +255,81 @@ describe("runSelfUpdate", () => {
     assert.equal(result.isLinked, false);
   });
 
+  it("uses sd pull when soda markers are present even if status probe fails", async () => {
+    const calls: string[] = [];
+    const result = await runSelfUpdate({
+      target: { dir: "repo", isLinked: true },
+      hasSodaWorkspace: () => true,
+      runSd: async (args) => {
+        calls.push(recordCall("sd", args));
+        if (args[0] === "status") {
+          throw new Error("spawn sd ENOENT");
+        }
+        return { stdout: sodaPull(false), stderr: "" };
+      },
+      runGit: async (args) => {
+        calls.push(recordCall("git", args));
+        return { stdout: "abc123\n", stderr: "" };
+      },
+      runNpm: async (args) => {
+        calls.push(recordCall("npm", args));
+        return { stdout: "", stderr: "" };
+      },
+    });
+    assert.equal(calls.includes("sd pull"), true);
+    assert.equal(calls.includes("git pull --ff-only"), false);
+    assert.equal(result.alreadyUpToDate, true);
+  });
+
+  it("retries with sd pull after soda interlock blocks git pull", async () => {
+    const calls: string[] = [];
+    const result = await runSelfUpdate({
+      target: { dir: "repo", isLinked: true },
+      hasSodaWorkspace: () => false,
+      runSd: async (args) => {
+        calls.push(recordCall("sd", args));
+        if (args[0] === "status") {
+          return { stdout: sodaStatus(false), stderr: "" };
+        }
+        return { stdout: sodaPull(false), stderr: "" };
+      },
+      runGit: async (args) => {
+        calls.push(recordCall("git", args));
+        if (args.join(" ") === "pull --ff-only") {
+          throw new Error("soda: raw git commit blocked in this sd-powered repo");
+        }
+        return { stdout: "abc123\n", stderr: "" };
+      },
+      runNpm: async (args) => {
+        calls.push(recordCall("npm", args));
+        return { stdout: "", stderr: "" };
+      },
+    });
+    assert.equal(calls.includes("git pull --ff-only"), true);
+    assert.equal(calls.includes("sd pull"), true);
+    assert.equal(result.alreadyUpToDate, true);
+  });
+
+  it("hard-fails when markers say soda but sd pull cannot run", async () => {
+    await assert.rejects(
+      () =>
+        runSelfUpdate({
+          target: { dir: "repo", isLinked: true },
+          hasSodaWorkspace: () => true,
+          runSd: async () => {
+            throw new Error("spawn sd ENOENT");
+          },
+          runGit: async () => ({ stdout: "abc123\n", stderr: "" }),
+          runNpm: async () => ({ stdout: "", stderr: "" }),
+        }),
+      /soda-managed.*sd pull failed/i,
+    );
+  });
+
   it("recognizes current and legacy no-change git pull output", () => {
     assert.equal(gitPullMadeNoChanges("Already up to date."), true);
     assert.equal(gitPullMadeNoChanges("Already up-to-date."), true);
     assert.equal(gitPullMadeNoChanges("Updating abc..def\nFast-forward"), false);
+    assert.equal(isSodaGitInterlockError("soda: raw git commit blocked in this sd-powered repo"), true);
   });
 });
